@@ -1,0 +1,31 @@
+{
+  "name": "land3",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "refresh": "tsx src/cli.ts refresh",
+    "collect-all": "tsx src/cli.ts collect-all",
+    "export": "tsx src/cli.ts export",
+    "run": "tsx src/cli.ts run",
+    "test": "vitest run",
+    "ci": "npm run typecheck && npm run test"
+  },
+  "dependencies": {
+    "cheerio": "^1.1.2",
+    "commander": "^14.0.0",
+    "dotenv": "^16.6.1",
+    "exceljs": "^4.4.0",
+    "mysql2": "^3.15.1",
+    "p-limit": "^7.3.0",
+    "playwright": "^1.54.2"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  }
+}
