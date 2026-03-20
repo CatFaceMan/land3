@@ -65,6 +65,29 @@ function parseKeyValueRows(rows: string[][]): Record<string, string> {
   return map;
 }
 
+function extractNoticeParcelNoFromHeaderTitle(headerTitle: string | null): string | null {
+  if (!headerTitle) {
+    return null;
+  }
+  const normalized = cleanText(headerTitle);
+  const match = normalized.match(/^(.+?地块)/);
+  return match?.[1] ?? normalized;
+}
+
+function pickAreaFromKvMap(kvMap: Record<string, string>): string | null {
+  const areaKeyPatterns = ["总用地面积", "宗地面积", "土地面积", "可建设用地面积"];
+  for (const [key, value] of Object.entries(kvMap)) {
+    if (!areaKeyPatterns.some((pattern) => key.includes(pattern))) {
+      continue;
+    }
+    const matched = cleanText(value).match(/([0-9]+(?:\.[0-9]+)?)/)?.[1];
+    if (matched) {
+      return matched;
+    }
+  }
+  return null;
+}
+
 class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
   public constructor() {
     super(config);
@@ -102,6 +125,7 @@ class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const kvMap = parseKeyValueRows(rows);
     const attachmentsJson = document.attachments.length > 0 ? JSON.stringify(document.attachments) : null;
 
+    const headerTitle = cleanText(await page.locator(".header-info .title").first().textContent().catch(() => null));
     const title = cleanText(await page.locator(".header-info .title, .article-title, h1").first().textContent().catch(() => null)) || context.listItem.title;
     const noticeNoRaw = firstNonEmpty(
       text.match(/(穗规划资源[^\s，。；;]*?(?:挂出|拍卖)?告字[〔(]\d{4}[)〕]\d+号)/)?.[1],
@@ -120,24 +144,18 @@ class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
     }
 
     if (bizType === "notice") {
-      const parcelNo = firstNonEmpty(
-        kvMap["地块编号"],
-        text.match(/地块编号[:：]?\s*([^\s，。；;]+)/)?.[1],
-        // Match the full name from the list item title if possible
-        // Example: [从化]从化经济开发区明珠工业园创华路西侧FC0205023地块一
-        // Remove the [Region] prefix
-        context.listItem.title.replace(/^\[[^\]]+\]/, "").trim(),
-        title.match(/([A-Za-z0-9（）()\-]+地块[一二三四五六七八九十]?)$/)?.[1],
-        text.match(/([A-Z]{1,4}\d{6,}[A-Za-z0-9]*地块[一二三四五六七八九十]?)/)?.[1],
-        text.match(/(\d{11,}[A-Za-z0-9]*号地块)/)?.[1]
-      );
+      const parcelNo = extractNoticeParcelNoFromHeaderTitle(headerTitle);
       const areaRaw = firstNonEmpty(
+        pickAreaFromKvMap(kvMap),
         text.match(/宗地面积[:：]?\s*([0-9.]+)平方米/)?.[1],
+        text.match(/宗地面积(?:[（(][^)）]*[)）])?[:：]?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1],
         text.match(/出让宗地面积([0-9.]+)/)?.[1],
         text.match(/总用地面积([0-9.]+)/)?.[1],
+        text.match(/总用地面积(?:[（(][^)）]*[)）])?[:：]?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1],
         text.match(/宗地面积[（(]平方米[）)]\s*([0-9.]+)/)?.[1],
         text.match(/土地面积[（(]平方米[）)]\s*([0-9.]+)/)?.[1],
-        text.match(/([0-9]+(?:\.[0-9]+)?)，全部为可建设用地/)?.[1]
+        text.match(/([0-9]+(?:\.[0-9]+)?)，全部为可建设用地/)?.[1],
+        text.match(/([0-9]+(?:\.[0-9]+)?)[（(]可建设用地面积[0-9.]+[）)]/)?.[1]
       );
       return [
         {
@@ -179,9 +197,8 @@ class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
 
     const resultTitle = cleanText(await page.locator(".article-title, h1").first().textContent().catch(() => null)) || title;
     const parcelNo = firstNonEmpty(
-      kvMap["地块编号"],
-      text.match(/地块编号[:：]?\s*([^\s，。；;]+)/)?.[1],
-      kvMap["地块位置"]?.match(/([A-Za-z]{1,5}\d{4,}[A-Za-z0-9（）()\-]*)/)?.[1]
+      kvMap["地块位置"],
+      text.match(/地块位置[:：]?\s*([^\n\r]+)/)?.[1]
     );
     const dealPriceWan = parseChineseNumber(firstNonEmpty(kvMap["成交价（万元）"], kvMap["成交价(万元）"], kvMap["成交价(万元)"]));
     return [

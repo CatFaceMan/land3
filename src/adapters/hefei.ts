@@ -36,6 +36,26 @@ const config: GenericSiteConfig = {
   }
 };
 
+function extractDistrictToken(value: string | null | undefined): string | null {
+  const text = cleanText(value);
+  if (!text) {
+    return null;
+  }
+  const region = firstNonEmpty(
+    text.match(/(.+?区)/)?.[1],
+    text.match(/(.+?县)/)?.[1],
+    text.match(/(.+?市)/)?.[1]
+  );
+  return region ? cleanText(region) : null;
+}
+
+function resolveDistrict(rawDistrict: string | null | undefined, parcelNo: string | null | undefined): string | null {
+  return firstNonEmpty(
+    extractDistrictToken(rawDistrict),
+    extractDistrictToken(parcelNo)
+  );
+}
+
 
 function parseRows(rawRows: string[][]): { headers: string[]; rows: string[][] } {
   const rows = rawRows
@@ -95,8 +115,8 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const title = cleanText(await page.locator("h1, .ewb-article-title").first().textContent().catch(() => null)) || document.title || context.listItem.title;
     const sourceUrl = page.url();
     const noticeNoRaw = firstNonEmpty(
-      title.match(/合自然资规公告\[\d{4}\]\d+号/)?.[0],
-      text.match(/合自然资规公告\[\d{4}\]\d+号/)?.[0],
+      title.match(/[^\s（）()]{0,12}自然资规公告[[（\[]\d{4}[)）\]]\d+号/)?.[0],
+      text.match(/[^\s（）()]{0,12}自然资规公告[[（\[]\d{4}[)）\]]\d+号/)?.[0],
       title.match(/\d{4}年第?\d+号公告/)?.[0]
     );
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
@@ -124,11 +144,12 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
         text.match(/挂牌截止时间是\s*([0-9年月日时分:\s]+)/)?.[1],
         text.match(/挂牌日期为[^，。；;]*至\s*([0-9年月日时分:\s]+)/)?.[1]
       ));
-      const records: ParsedNoticeRecord[] = rows.map((row, rowIndex) => {
+      const records: ParsedNoticeRecord[] = rows.map((row) => {
         const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
         const areaMu = areaIdx >= 0 ? parseFirstNumber(row[areaIdx]) ?? Number.NaN : Number.NaN;
         const unitPriceWanPerMu = startPriceIdx >= 0 ? parseFirstNumber(row[startPriceIdx]) ?? Number.NaN : Number.NaN;
         const startPriceWan = Number.isFinite(unitPriceWanPerMu) && Number.isFinite(areaMu) ? Number((unitPriceWanPerMu * areaMu).toFixed(4)) : parseChineseNumber(startTotalIdx >= 0 ? row[startTotalIdx] : null);
+        const districtRaw = districtIdx >= 0 ? row[districtIdx] ?? null : null;
         return {
           siteCode: this.siteCode,
           sourceKey: buildStableSourceKey(this.siteCode, "notice", [
@@ -141,7 +162,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
-          district: districtIdx >= 0 ? row[districtIdx] ?? null : null,
+          district: resolveDistrict(districtRaw, parcelNo),
           noticeTitle: title,
           noticeNoRaw: noticeNoRaw ?? parcelNo,
           noticeNoNorm,
@@ -160,8 +181,9 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
       return records;
     }
 
-    const records: ParsedResultRecord[] = rows.map((row, rowIndex) => {
+    const records: ParsedResultRecord[] = rows.map((row) => {
       const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
+      const districtRaw = districtIdx >= 0 ? row[districtIdx] ?? null : null;
       const dealDate = normalizeDate(firstNonEmpty(
         dealDateIdx >= 0 ? row[dealDateIdx] : null,
         title.match(/\((\d{4}\.\d{1,2}\.\d{1,2})\)/)?.[1],
@@ -184,7 +206,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
-        district: districtIdx >= 0 ? row[districtIdx] ?? null : null,
+        district: resolveDistrict(districtRaw, parcelNo),
         resultTitle: title,
         noticeNoRaw: noticeNoRaw ?? parcelNo,
         noticeNoNorm,
