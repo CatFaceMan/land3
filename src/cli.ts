@@ -6,7 +6,6 @@ import { createPool } from "./db/connection.js";
 import { LandRepository } from "./db/repository.js";
 import { ensureSchema } from "./db/schema.js";
 import type { SiteCode } from "./domain/types.js";
-import { runExport } from "./services/export-service.js";
 import { runRefresh } from "./services/refresh-service.js";
 import { runCollectAll } from "./services/collect-all-service.js";
 
@@ -15,21 +14,6 @@ function assertSiteCode(value: string): SiteCode {
     return value as SiteCode;
   }
   throw new Error(`Invalid site code: ${value}. Supported: ${SUPPORTED_SITE_CODES.join(", ")}`);
-}
-
-async function withRepository<T>(fn: (repository: LandRepository) => Promise<T>): Promise<T> {
-  const config = loadConfig();
-  const warnings = validateConfig(config);
-  if (warnings.length > 0) {
-    process.stderr.write(`${warnings.map((item) => `[config-warning] ${item}`).join("\n")}\n`);
-  }
-  const pool = createPool(config);
-  try {
-    await ensureSchema(pool);
-    return await fn(new LandRepository(pool));
-  } finally {
-    await pool.end();
-  }
 }
 
 export function buildProgram(): Command {
@@ -79,11 +63,6 @@ export function buildProgram(): Command {
     .option("--to <date>")
     .option("--headless <boolean>")
     .option("--max-items <count>")
-    .option("--monitor <boolean>")
-    .option("--concurrent-biz <boolean>")
-    .option("--fail-rate-threshold <number>")
-    .option("--circuit-break-failures <count>")
-    .option("--circuit-break-cooldown-ms <ms>")
     .action(async (options) => {
       const config = loadConfig();
       const warnings = validateConfig(config);
@@ -103,74 +82,9 @@ export function buildProgram(): Command {
           repository,
           from: options.from,
           to: options.to,
-          monitor: options.monitor !== "false",
-          concurrentBiz: options.concurrentBiz !== "false",
-          failRateThreshold: options.failRateThreshold ? Number(options.failRateThreshold) : undefined,
-          circuitBreakFailures: options.circuitBreakFailures ? Number(options.circuitBreakFailures) : undefined,
-          circuitBreakCooldownMs: options.circuitBreakCooldownMs ? Number(options.circuitBreakCooldownMs) : undefined,
           maxItems: options.maxItems ? Number(options.maxItems) : undefined
         });
         process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      } finally {
-        await pool.end();
-      }
-    });
-
-  program
-    .command("export")
-    .requiredOption("--site <site>")
-    .requiredOption("--out <path>")
-    .action(async (options) => {
-      await withRepository(async (repository) => {
-        const result = await runExport(repository, assertSiteCode(options.site), options.out);
-        process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
-      });
-    });
-
-  program
-    .command("run")
-    .requiredOption("--site <site>")
-    .requiredOption("--out <path>")
-    .option("--from <date>")
-    .option("--to <date>")
-    .option("--headless <boolean>")
-    .option("--max-items <count>")
-    .action(async (options) => {
-      const config = loadConfig();
-      const siteCode = assertSiteCode(options.site);
-      assertSiteEnabled(config, siteCode);
-      const warnings = validateConfig(config);
-      if (warnings.length > 0) {
-        process.stderr.write(`${warnings.map((item) => `[config-warning] ${item}`).join("\n")}\n`);
-      }
-      if (options.headless !== undefined) {
-        config.browser.headless = options.headless !== "false";
-      }
-
-      const pool = createPool(config);
-      try {
-        await ensureSchema(pool);
-        const repository = new LandRepository(pool);
-        const refreshResult = await runRefresh({
-          config,
-          repository,
-          siteCode,
-          from: options.from,
-          to: options.to,
-          maxItems: options.maxItems ? Number(options.maxItems) : undefined
-        });
-        const exportResult = await runExport(repository, siteCode, options.out);
-        process.stdout.write(
-          `${JSON.stringify(
-            {
-              siteCode,
-              refresh: refreshResult,
-              export: exportResult
-            },
-            null,
-            2
-          )}\n`
-        );
       } finally {
         await pool.end();
       }

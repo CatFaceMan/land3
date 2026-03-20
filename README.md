@@ -1,6 +1,6 @@
 # land3
 
-`land3` 是基于 `land2` 裁剪出的土地数据采集 MVP，只保留单站点抓取、合并入库和 Excel 导出。
+`land3` 是基于 `land2` 裁剪出的土地数据采集 MVP，仅保留 11 个城市的采集与合并入库能力。
 
 支持站点：
 - `beijing`
@@ -36,14 +36,9 @@ copy .env.example .env
 npm run refresh -- --site beijing
 ```
 
-导出单站点 Excel：
+抓取并合并全部 11 个城市：
 ```bash
-npm run export -- --site beijing --out .\output\beijing.xlsx
-```
-
-一条命令执行抓取、合并、导出：
-```bash
-npm run run -- --site beijing --out .\output\beijing.xlsx
+npm run collect-all
 ```
 
 可选参数：
@@ -56,4 +51,3 @@ npm run run -- --site beijing --out .\output\beijing.xlsx
 
 - MySQL 原始表：`land_notice_raw`、`land_result_raw`
 - MySQL 业务表：`land_record`、`manual_review_pool`
-- Excel sheet：`12个城市`

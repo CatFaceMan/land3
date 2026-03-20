@@ -197,24 +197,6 @@ export interface ManualReviewRecord {
   resultSourceUrl: string | null;
 }
 
-export interface ExportLandRow {
-  序号: number;
-  所属市: string;
-  "所属区（县）": string;
-  出让公告: string;
-  交易日期: Date | null;
-  地块公告号: string;
-  用地性质: string;
-  "面积（公顷）": number | null;
-  "起始价（万元）": number | null;
-  "成交价（万元）": number | null;
-  "溢价金额（万元）": number | null;
-  溢价率: number | null;
-  公告时间: Date | null;
-  交易状态: string;
-  竞得单位: string | null;
-}
-
 export interface CrawlRunSummary {
   siteCode: SiteCode;
   bizType: BizType;

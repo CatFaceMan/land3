@@ -177,15 +177,3 @@ async function createBusinessTables(pool: Pool): Promise<void> {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异常复核池';
   `);
 }
-
-export async function resetBusinessSchema(pool: Pool): Promise<void> {
-  await pool.query(`DROP TABLE IF EXISTS crawl_task_state`);
-  await pool.query(`DROP TABLE IF EXISTS crawl_watermark`);
-  await pool.query(`DROP TABLE IF EXISTS land_notice_raw`);
-  await pool.query(`DROP TABLE IF EXISTS land_result_raw`);
-  await pool.query(`DROP TABLE IF EXISTS land_record`);
-  await pool.query(`DROP TABLE IF EXISTS manual_review_pool`);
-  await pool.query(`DROP TABLE IF EXISTS crawl_checkpoint`);
-  await createCrawlRuntimeTables(pool);
-  await createBusinessTables(pool);
-}
