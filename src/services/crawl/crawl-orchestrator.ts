@@ -26,6 +26,24 @@ function resolveProxy(context: CrawlContext) {
 export class CrawlOrchestrator {
   public constructor(private readonly logger = new CrawlLogger()) {}
 
+  private resolveDelay(baseDelayMs: number, jitterMs: number): number {
+    if (baseDelayMs <= 0 && jitterMs <= 0) {
+      return 0;
+    }
+    const base = Math.max(0, baseDelayMs);
+    const jitter = Math.max(0, jitterMs);
+    return base + (jitter > 0 ? Math.floor(Math.random() * (jitter + 1)) : 0);
+  }
+
+  private isPotentialBlock(message: string | null): boolean {
+    const normalized = (message ?? "").toLowerCase();
+    return normalized.includes("403")
+      || normalized.includes("429")
+      || normalized.includes("forbidden")
+      || normalized.includes("captcha")
+      || normalized.includes("verify");
+  }
+
   public async run(context: CrawlContext): Promise<CrawlOrchestratorOutput> {
     const adapter = getAdapter(context.siteCode);
     const kernel = new BrowserKernel(context.config, context.siteCode, resolveProxy(context));
@@ -36,8 +54,11 @@ export class CrawlOrchestrator {
     const rateLimited = isRateLimitedSite(context.siteCode);
     const configuredDetailConcurrency = Math.max(1, siteRuntime.detailConcurrency ?? 5);
     const configuredExtraDelayMs = Math.max(0, siteRuntime.extraDelayMs ?? 0);
+    const configuredJitterMs = Math.max(0, siteRuntime.delayJitterMs ?? 0);
+    const configuredBlockCooldownMs = Math.max(0, siteRuntime.blockCooldownMs ?? 0);
     const detailConcurrency = rateLimited ? 1 : configuredDetailConcurrency;
     const extraDelayMs = rateLimited ? Math.max(2_500, configuredExtraDelayMs) : configuredExtraDelayMs;
+    const jitterMs = configuredJitterMs;
 
     const notices: ParsedNoticeRecord[] = [];
     const results: ParsedResultRecord[] = [];
@@ -81,7 +102,7 @@ export class CrawlOrchestrator {
           directTasks.map((task) =>
             limit(async () => {
               if (extraDelayMs > 0) {
-                await kernel.sleep(extraDelayMs);
+                await kernel.sleep(this.resolveDelay(extraDelayMs, jitterMs));
               }
               this.logger.info({
                 event: "task_start",
@@ -139,6 +160,16 @@ export class CrawlOrchestrator {
             }
           } else {
             failedTasks += 1;
+            if (configuredBlockCooldownMs > 0 && this.isPotentialBlock(output.result.lastError)) {
+              this.logger.info({
+                event: "site_cooldown",
+                runId: context.runId,
+                site: context.siteCode,
+                biz: context.bizType,
+                message: `waitMs=${configuredBlockCooldownMs}; reason=${output.result.lastError ?? "unknown"}`
+              });
+              await kernel.sleep(configuredBlockCooldownMs);
+            }
             if (this.isTimeoutError(output.result.lastError)) {
               this.logger.error({
                 event: "task_timeout",
@@ -160,7 +191,7 @@ export class CrawlOrchestrator {
 
         for (const task of interactiveTasks) {
           if (extraDelayMs > 0) {
-            await kernel.sleep(extraDelayMs);
+            await kernel.sleep(this.resolveDelay(extraDelayMs, jitterMs));
           }
           this.logger.info({
             event: "task_start",
@@ -206,6 +237,16 @@ export class CrawlOrchestrator {
             }
           } else {
             failedTasks += 1;
+            if (configuredBlockCooldownMs > 0 && this.isPotentialBlock(output.result.lastError)) {
+              this.logger.info({
+                event: "site_cooldown",
+                runId: context.runId,
+                site: context.siteCode,
+                biz: context.bizType,
+                message: `waitMs=${configuredBlockCooldownMs}; reason=${output.result.lastError ?? "unknown"}`
+              });
+              await kernel.sleep(configuredBlockCooldownMs);
+            }
             if (this.isTimeoutError(output.result.lastError)) {
               this.logger.error({
                 event: "task_timeout",
@@ -232,12 +273,22 @@ export class CrawlOrchestrator {
         if (stopByFromDate) {
           break;
         }
+        if (listPage.isClosed()) {
+          listPage = await kernel.getPage();
+          await adapter.gotoPage(listPage, context.bizType, pageNo + 1);
+          if (extraDelayMs > 0) {
+            await kernel.sleep(this.resolveDelay(extraDelayMs, jitterMs));
+          }
+          await kernel.sleep(context.config.browser.throttle.afterPageTurnMs);
+          continue;
+        }
+
         const moved = await adapter.nextPage(listPage, context.bizType, pageNo);
         if (!moved) {
           break;
         }
         if (extraDelayMs > 0) {
-          await kernel.sleep(extraDelayMs);
+          await kernel.sleep(this.resolveDelay(extraDelayMs, jitterMs));
         }
         await kernel.sleep(context.config.browser.throttle.afterPageTurnMs);
       }

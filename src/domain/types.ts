@@ -18,6 +18,7 @@ export interface BrowserRuntimeConfig {
   headless: boolean;
   timeoutMs: number;
   userAgent?: string;
+  cdpEndpoint?: string;
   throttle: {
     afterListOpenMs: number;
     beforeDetailClickMs: number;
@@ -35,6 +36,10 @@ export interface SiteRuntimeConfig {
   proxyProfile?: string;
   detailConcurrency?: number;
   extraDelayMs?: number;
+  delayJitterMs?: number;
+  blockCooldownMs?: number;
+  storageStatePath?: string;
+  challengeWaitMs?: number;
 }
 
 export interface AppConfig {

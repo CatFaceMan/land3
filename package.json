@@ -7,6 +7,11 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "refresh": "tsx src/cli.ts refresh",
+    "bootstrap-zj-session": "tsx src/tools/bootstrap-zj-session.ts",
+    "probe-zj:headless": "tsx src/tools/zj-probe.ts --mode=headless --site=hangzhou",
+    "probe-zj:headed": "tsx src/tools/zj-probe.ts --mode=headed --site=hangzhou",
+    "analyze-zj-har": "tsx src/tools/zj-analyze-har.ts",
+    "probe-zj:cdp": "tsx src/tools/zj-cdp-probe.ts",
     "collect-all": "tsx src/cli.ts collect-all",
     "test": "vitest run",
     "ci": "npm run typecheck && npm run test"

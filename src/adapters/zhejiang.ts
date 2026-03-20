@@ -57,6 +57,52 @@ function createZhejiangConfig(siteCode: SiteCode, cityName: string): GenericSite
   };
 }
 
+function getChallengeWaitMs(siteCode: SiteCode): number {
+  const raw = process.env[`SITE_${siteCode.toUpperCase()}_CHALLENGE_WAIT_MS`]?.trim();
+  if (!raw) {
+    return 0;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
+function getChallengeBreakerThreshold(siteCode: SiteCode): number {
+  const raw = process.env[`SITE_${siteCode.toUpperCase()}_CHALLENGE_BREAKER_THRESHOLD`]?.trim();
+  if (!raw) {
+    return 2;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 2;
+}
+
+function getChallengeBreakerCooldownMs(siteCode: SiteCode): number {
+  const raw = process.env[`SITE_${siteCode.toUpperCase()}_CHALLENGE_BREAKER_COOLDOWN_MS`]?.trim();
+  if (!raw) {
+    return 60 * 60 * 1000;
+  }
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? Math.floor(value) : 60 * 60 * 1000;
+}
+
+function isAntiBotChallenge(title: string, text: string, html: string): boolean {
+  const joined = `${title}\n${text}\n${html}`.toLowerCase();
+  const markers = [
+    "滑动验证",
+    "访问验证",
+    "请按住滑块",
+    "请进行验证",
+    "请完成验证",
+    "traceid",
+    "captcha",
+    "verify"
+  ];
+  if (markers.some((marker) => joined.includes(marker))) {
+    return true;
+  }
+  // In some locked environments the challenge page can degrade to an empty shell.
+  return !cleanText(title) && !cleanText(text);
+}
+
 function matchValue(text: string, label: string, terminators: string[]): string | null {
   const index = text.indexOf(label);
   if (index < 0) {
@@ -170,12 +216,125 @@ export function extractZhejiangDistrict(text: string, summary: string | null | u
   );
 }
 
+function extractZhejiangDistrictFromTitle(title: string | null | undefined): string | null {
+  const text = cleanText(title);
+  if (!text) {
+    return null;
+  }
+  return firstNonEmpty(
+    text.match(/([^\s，。；:：]+区)/)?.[1],
+    text.match(/([^\s，。；:：]+县)/)?.[1]
+  );
+}
+
+function extractLandUsageKeyword(rawUsage: string | null | undefined): string | null {
+  const text = cleanText(rawUsage);
+  if (!text) {
+    return null;
+  }
+  const direct = text.match(/([^\s（）()]{2})用地/)?.[1];
+  if (direct) {
+    return direct;
+  }
+  return firstNonEmpty(
+    text.includes("工业") ? "工业" : null,
+    text.includes("住宅") ? "住宅" : null,
+    text.includes("商服") ? "商服" : null,
+    text.includes("仓储") ? "仓储" : null,
+    text.includes("物流") ? "物流" : null,
+    text.includes("商务") ? "商务" : null,
+    text.includes("商业") ? "商业" : null,
+    text.includes("金融") ? "金融" : null,
+    text.includes("其他") ? "其他" : null
+  );
+}
+
+function extractAnnouncementHeaderLines(announcementText: string): { titleLine: string | null; subTitleLine: string | null } {
+  const lines = announcementText
+    .split(/\r?\n/)
+    .map((line) => cleanText(line))
+    .filter((line) => line.length > 0);
+  const titleLine = lines.find((line) => /(?:出让公告|公告)$/.test(line)) ?? null;
+  const subTitleLine = lines.find((line) => /告[【\[]\d{4}[】\]][^。\n]*号/.test(line)) ?? null;
+  return { titleLine, subTitleLine };
+}
+
 class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
   private currentItems: ListItemSummary[] = [];
   private lastPageNo = 1;
+  private static readonly challengeState = new Map<SiteCode, { failures: number; openUntil: number }>();
 
   public constructor(siteCode: SiteCode, cityName: string, private readonly filterKeyword: string) {
     super(createZhejiangConfig(siteCode, cityName));
+  }
+
+  private async applyCityFilter(page: Page): Promise<void> {
+    const cityLabel = this.filterKeyword.includes("宁波") ? "宁波市" : "杭州市";
+    const cityOption = page
+      .locator("span.filter-select-option, .filter-select-option, .ant-tag, .filter-item, span, button, a")
+      .filter({ hasText: cityLabel })
+      .first();
+    if ((await cityOption.count().catch(() => 0)) > 0) {
+      await cityOption.click().catch(() => undefined);
+      await page.waitForTimeout(1500);
+    }
+  }
+
+  public override async openEntry(page: Page, bizType: "notice" | "result"): Promise<void> {
+    await super.openEntry(page, bizType);
+    await this.applyCityFilter(page);
+    if (bizType === "result") {
+      const option = page.locator("span.filter-select-option").filter({ hasText: "结果公示" }).first();
+      if ((await option.count().catch(() => 0)) > 0) {
+        await option.click().catch(() => undefined);
+        await page.waitForTimeout(1500);
+      }
+    }
+  }
+
+  public override async waitForListReady(page: Page, bizType: "notice" | "result"): Promise<void> {
+    const breakerThreshold = getChallengeBreakerThreshold(this.siteCode);
+    const breakerCooldownMs = getChallengeBreakerCooldownMs(this.siteCode);
+    const state = ZhejiangSiteAdapter.challengeState.get(this.siteCode) ?? { failures: 0, openUntil: 0 };
+    if (state.openUntil > Date.now()) {
+      const remainMs = state.openUntil - Date.now();
+      throw new Error(`zhejiang circuit breaker open for ${this.siteCode}: remainMs=${remainMs}`);
+    }
+
+    const challengeWaitMs = getChallengeWaitMs(this.siteCode);
+    const startedAt = Date.now();
+    while (true) {
+      try {
+        await super.waitForListReady(page, bizType);
+        ZhejiangSiteAdapter.challengeState.set(this.siteCode, { failures: 0, openUntil: 0 });
+        return;
+      } catch (error) {
+        const title = cleanText(await page.title().catch(() => null));
+        const text = cleanText(await page.evaluate(() => window.document.body?.innerText || "").catch(() => ""));
+        const html = cleanText(await page.content().catch(() => ""));
+        const challengeDetected = isAntiBotChallenge(title, text, html);
+        if (!challengeDetected) {
+          const message = error instanceof Error ? error.message : String(error);
+          throw new Error(
+            `zhejiang list page not ready; title=${title || "N/A"}; url=${page.url()}; text=${text.slice(0, 200)}; cause=${message}`
+          );
+        }
+
+        const current = ZhejiangSiteAdapter.challengeState.get(this.siteCode) ?? { failures: 0, openUntil: 0 };
+        const nextFailures = current.failures + 1;
+        if (nextFailures >= breakerThreshold) {
+          const openUntil = Date.now() + breakerCooldownMs;
+          ZhejiangSiteAdapter.challengeState.set(this.siteCode, { failures: nextFailures, openUntil });
+          throw new Error(`zhejiang anti-bot challenge breaker opened for ${this.siteCode}; cooldownMs=${breakerCooldownMs}`);
+        }
+        ZhejiangSiteAdapter.challengeState.set(this.siteCode, { failures: nextFailures, openUntil: 0 });
+
+        if (challengeWaitMs <= 0 || Date.now() - startedAt >= challengeWaitMs) {
+          throw new Error(`zhejiang anti-bot challenge detected: ${title || "滑动验证页面"}`);
+        }
+        await page.waitForTimeout(2_000);
+      }
+    }
   }
 
   public override async listItems(page: Page, bizType: "notice" | "result", pageNo: number): Promise<ListItemSummary[]> {
@@ -202,9 +361,8 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
   }
 
   private shouldSkip(item: ListItemSummary): boolean {
-    const hasResourceId = Boolean(extractResourceId(item.url));
-    const matchesCity = item.title.includes(this.filterKeyword);
-    return !(hasResourceId && matchesCity);
+    void item;
+    return false;
   }
 
   public override async openDetail(page: Page, bizType: "notice" | "result", itemIndex: number): Promise<Page> {
@@ -251,6 +409,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const sourceUrl = page.url();
     const text = liveText || cleanText(document.contentText);
     const announcementText = await extractZhejiangAnnouncementText(page);
+    const headerLines = extractAnnouncementHeaderLines(announcementText);
     const summary = cleanText(context.listItem.title);
     const rightText = cleanText(await page.locator(".info-right").first().textContent().catch(() => null));
     const infoItems = await page.locator(".info-item").evaluateAll((nodes) =>
@@ -263,12 +422,16 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       text.match(/地块编号（宗地编码）：\s*([^地]+?)\s*地块名称：/)?.[1],
       summary.match(/#([^#|]+?)(?:保证金到账截止时间|起始价|挂牌时间|拍卖时间|拍卖开始|$)/)?.[1]
     );
-    const district = extractZhejiangDistrict(text, summary);
+    const district = firstNonEmpty(
+      extractZhejiangDistrictFromTitle(headerLines.titleLine),
+      extractZhejiangDistrict(text, summary)
+    );
     const areaHa = parseAreaToHectare(matchValue(text, "出让面积：", ["土地主用途：", "土地用途明细："]));
-    const landUsage = firstNonEmpty(
+    const landUsageRaw = firstNonEmpty(
       text.match(/土地主用途：\s*([^土]+?)\s*土地用途明细：/)?.[1],
       summary.match(/(住宅用地|商服用地|商务金融用地|商业服务业设施用地|一类工业用地（其他工业用地）|二类工业用地（其他工业用地）|二类工业用地|一类物流仓储用地（通用仓储类）|一类物流仓储用地|商务金融用地|工业用地)/)?.[1]
     );
+    const landUsage = extractLandUsageKeyword(landUsageRaw);
     const noticeArea = areaHa ?? parseAreaToHectare(summary.match(/出让面积([0-9.]+平方米\[[0-9.]+亩\])/)?.[1] ?? null);
     const noticeDate = normalizeDate(firstNonEmpty(
       infoItems.find((item) => item.includes("发布时间："))?.split("发布时间：")[1],
@@ -289,6 +452,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       text.match(/(公告期|挂牌期|竞价期|交易结束|结果公示|终止|已成交)/)?.[1]
     );
     const noticeNoRaw = firstNonEmpty(
+      headerLines.subTitleLine,
       extractZhejiangNoticeNo(announcementText),
       extractZhejiangNoticeNo(text),
       cleanText(parcelNo) || null
@@ -312,7 +476,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
           sourceTitle: context.listItem.title,
           city: this.cityName,
           district: district ?? null,
-          noticeTitle: parcelNo || context.listItem.title,
+          noticeTitle: headerLines.subTitleLine || parcelNo || context.listItem.title,
           noticeNoRaw,
           noticeNoNorm,
           landUsage: landUsage ?? null,

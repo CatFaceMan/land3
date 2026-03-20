@@ -48,6 +48,7 @@ export function loadConfig(options?: { allowMissingDatabaseUrl?: boolean }): App
       headless: readBoolean("BROWSER_HEADLESS", true),
       timeoutMs: readNumber("BROWSER_TIMEOUT_MS", 30000),
       userAgent: process.env.BROWSER_USER_AGENT?.trim(),
+      cdpEndpoint: process.env.BROWSER_CDP_ENDPOINT?.trim() || undefined,
       throttle: {
         afterListOpenMs: readNumber("THROTTLE_AFTER_LIST_OPEN_MS", 300),
         beforeDetailClickMs: readNumber("THROTTLE_BEFORE_DETAIL_CLICK_MS", 200),
@@ -74,7 +75,11 @@ export function loadConfig(options?: { allowMissingDatabaseUrl?: boolean }): App
             enabled: readBoolean(`${prefix}_ENABLED`, true),
             proxyProfile: proxyProfile && proxyProfile.length > 0 ? proxyProfile : undefined,
             detailConcurrency: readNumber(`${prefix}_DETAIL_CONCURRENCY`, defaultDetailConcurrency),
-            extraDelayMs: readNumber(`${prefix}_EXTRA_DELAY_MS`, defaultExtraDelayMs)
+            extraDelayMs: readNumber(`${prefix}_EXTRA_DELAY_MS`, defaultExtraDelayMs),
+            delayJitterMs: readNumber(`${prefix}_DELAY_JITTER_MS`, 0),
+            blockCooldownMs: readNumber(`${prefix}_BLOCK_COOLDOWN_MS`, 0),
+            storageStatePath: process.env[`${prefix}_STORAGE_STATE_PATH`]?.trim() || undefined,
+            challengeWaitMs: readNumber(`${prefix}_CHALLENGE_WAIT_MS`, 0)
           }
         ];
       })
