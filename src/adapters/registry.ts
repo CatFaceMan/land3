@@ -1,4 +1,3 @@
-import { ConfiguredHtmlSiteAdapter } from "./base-html-adapter.js";
 import { beijingAdapter } from "./beijing.js";
 import { chengduAdapter } from "./chengdu.js";
 import { guangzhouAdapter } from "./guangzhou.js";
@@ -7,25 +6,24 @@ import { changzhouAdapter, suzhouAdapter, wuxiAdapter } from "./jiangsu.js";
 import { wuhanAdapter } from "./wuhan.js";
 import { xianAdapter } from "./xian.js";
 import { hangzhouAdapter, ningboAdapter } from "./zhejiang.js";
-import type { GenericSiteConfig, SiteAdapter } from "./site-adapter.js";
+import type { SiteAdapter } from "./site-adapter.js";
+import { SITE_CODES, type SiteCode } from "../domain/sites.js";
 
-function createAdapter(config: GenericSiteConfig): SiteAdapter {
-  return new ConfiguredHtmlSiteAdapter(config);
-}
+const adapterBySite: Record<SiteCode, SiteAdapter> = {
+  beijing: beijingAdapter,
+  suzhou: suzhouAdapter,
+  wuxi: wuxiAdapter,
+  changzhou: changzhouAdapter,
+  hangzhou: hangzhouAdapter,
+  ningbo: ningboAdapter,
+  guangzhou: guangzhouAdapter,
+  hefei: hefeiAdapter,
+  chengdu: chengduAdapter,
+  xian: xianAdapter,
+  wuhan: wuhanAdapter
+};
 
-const adapters: SiteAdapter[] = [
-  beijingAdapter,
-  suzhouAdapter,
-  wuxiAdapter,
-  changzhouAdapter,
-  hangzhouAdapter,
-  ningboAdapter,
-  guangzhouAdapter,
-  hefeiAdapter,
-  chengduAdapter,
-  xianAdapter,
-  wuhanAdapter
-];
+const adapters: SiteAdapter[] = SITE_CODES.map((siteCode) => adapterBySite[siteCode]);
 
 export function getRegisteredAdapters(): SiteAdapter[] {
   return adapters;

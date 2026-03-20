@@ -5,6 +5,7 @@ import type { ParseDetailContext, ParsedNoticeRecord, ParsedResultRecord } from 
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { normalizeHeader } from "../utils/table-parser.js";
 
@@ -101,7 +102,7 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
         return [
           {
             siteCode: this.siteCode,
-            sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:0:${noticeNoNorm ?? sourceUrl}`,
+            sourceKey: buildStableSourceKey(this.siteCode, "notice", [noticeNoNorm, title, sourceUrl]),
             sourceUrl,
             sourceTitle: context.listItem.title,
             city: this.cityName,
@@ -124,7 +125,7 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
       }
       return rows.map((row, rowIndex) => ({
         siteCode: this.siteCode,
-        sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? row[1] ?? sourceUrl}`,
+        sourceKey: buildStableSourceKey(this.siteCode, "notice", [noticeNoNorm, row[1], row.join("|"), title, sourceUrl]),
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
@@ -154,7 +155,7 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
       return [
         {
           siteCode: this.siteCode,
-          sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:0:${noticeNoNorm ?? sourceUrl}`,
+          sourceKey: buildStableSourceKey(this.siteCode, "result", [noticeNoNorm, resultTitle, sourceUrl]),
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
@@ -176,7 +177,7 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
     }
     return rows.map((row, rowIndex) => ({
       siteCode: this.siteCode,
-      sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? row[1] ?? sourceUrl}`,
+      sourceKey: buildStableSourceKey(this.siteCode, "result", [noticeNoNorm, row[1], row.join("|"), resultTitle, sourceUrl]),
       sourceUrl,
       sourceTitle: context.listItem.title,
       city: this.cityName,

@@ -7,6 +7,7 @@ import { cleanStatus, cleanText, firstNonEmpty } from "../utils/text.js";
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 
 const SELECTORS: SiteSelectors = {
   listReady: ["section .source-info-item > a:visible", ".source-info-item > a:visible", "a.expand-card-wrapper.d-block:visible"],
@@ -294,7 +295,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
     );
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
     const attachmentsJson = attachments.length > 0 ? JSON.stringify(attachments) : null;
-    const sourceKey = `${context.task.pageNo}:${context.task.itemIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`;
+    const sourceKey = buildStableSourceKey(this.siteCode, bizType, [noticeNoNorm, parcelNo, sourceUrl]);
     const startPriceWan = firstNonEmpty(
       String(parsePriceWan(matchValue(text, "竞地价起始价：", ["竞地价增价幅度：", "温馨提示", "交易信息"]), noticeArea) ?? ""),
       String(parsePriceWan(matchValue(text, "起始价：", ["保证金", "距挂牌开始时间", "距保证金交纳截止时间"]), noticeArea) ?? ""),

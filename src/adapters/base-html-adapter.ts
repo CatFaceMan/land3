@@ -12,6 +12,7 @@ import { waitForAny } from "../utils/browser-utils.js";
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanStatus, cleanText, firstNonEmpty } from "../utils/text.js";
 import type { DetailFieldMap, GenericSiteConfig, SiteAdapter, SiteSelectors } from "./site-adapter.js";
 
@@ -194,7 +195,14 @@ export class ConfiguredHtmlSiteAdapter implements SiteAdapter {
     const fields = this.extractFields(document);
     const sourceUrl = page.url();
     const attachmentsJson = document.attachments.length > 0 ? JSON.stringify(document.attachments) : null;
-    const sourceKey = `${context.task.pageNo}:${context.task.itemIndex}:${normalizeNoticeNo(fields.noticeNo) ?? sourceUrl}`;
+    const sourceKey = buildStableSourceKey(this.siteCode, bizType, [
+      normalizeNoticeNo(fields.noticeNo),
+      fields.parcelNo,
+      fields.noticeDate,
+      fields.tradeDate,
+      document.title,
+      sourceUrl
+    ]);
 
     if (bizType === "notice") {
       return [

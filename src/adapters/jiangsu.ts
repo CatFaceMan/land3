@@ -4,6 +4,7 @@ import type { BizType, ListItemSummary, ParseDetailContext, ParsedNoticeRecord, 
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanStatus, cleanText } from "../utils/text.js";
 import { extractDocument } from "./base-html-adapter.js";
 import { waitForAny } from "../utils/browser-utils.js";
@@ -653,7 +654,13 @@ export class JiangsuBaseAdapter implements SiteAdapter {
       const parcelNo = cleanText(parcel.dkBh) || cleanText(parcel.parcelNo) || null;
       const landUsage = resolveJiangsuLandUsage(parcel.landUse, parcel.tdYt, cleanText(parcel.xzqDm) || cleanText(affiche.xzqDm));
       const region = await this.resolveRegionInfo(page, cleanText(parcel.xzqDm) || cleanText(affiche.xzqDm) || null);
-      const sourceKey = `${context.task.pageNo}:${context.task.itemIndex}:${subIndex}:${normalizeNoticeNo(noticeNoRaw) ?? parcelNo ?? sourceUrl}`;
+      const sourceKey = buildStableSourceKey(this.siteCode, "notice", [
+        normalizeNoticeNo(noticeNoRaw),
+        parcelNo,
+        String(subIndex),
+        document.title,
+        sourceUrl
+      ]);
 
       return {
         siteCode: this.siteCode,
@@ -686,7 +693,13 @@ export class JiangsuBaseAdapter implements SiteAdapter {
       const parcelNo = cleanText(bargain.dkBh) || cleanText(bargain.parcelNo) || null;
       const landUsage = resolveJiangsuLandUsage(bargain.landUse, bargain.tdYt, cleanText(bargain.xzqDm));
       const region = await this.resolveRegionInfo(page, cleanText(bargain.xzqDm));
-      const sourceKey = `${context.task.pageNo}:${context.task.itemIndex}:${subIndex}:${normalizeNoticeNo(noticeNoRaw) ?? parcelNo ?? sourceUrl}`;
+      const sourceKey = buildStableSourceKey(this.siteCode, "result", [
+        normalizeNoticeNo(noticeNoRaw),
+        parcelNo,
+        String(subIndex),
+        document.title,
+        sourceUrl
+      ]);
 
       return {
         siteCode: this.siteCode,

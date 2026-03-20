@@ -5,6 +5,7 @@ import type { ListItemSummary, ParseDetailContext, ParsedNoticeRecord, ParsedRes
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { normalizeHeader, findHeaderIndex } from "../utils/table-parser.js";
 
@@ -130,7 +131,13 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
         const startPriceWan = Number.isFinite(unitPriceWanPerMu) && Number.isFinite(areaMu) ? Number((unitPriceWanPerMu * areaMu).toFixed(4)) : parseChineseNumber(startTotalIdx >= 0 ? row[startTotalIdx] : null);
         return {
           siteCode: this.siteCode,
-          sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+          sourceKey: buildStableSourceKey(this.siteCode, "notice", [
+            noticeNoNorm,
+            parcelNo,
+            row.join("|"),
+            title,
+            sourceUrl
+          ]),
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
@@ -167,7 +174,13 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
       const winner = winnerIdx >= 0 ? row[winnerIdx] ?? null : null;
       return {
         siteCode: this.siteCode,
-        sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+        sourceKey: buildStableSourceKey(this.siteCode, "result", [
+          noticeNoNorm,
+          parcelNo,
+          row.join("|"),
+          title,
+          sourceUrl
+        ]),
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,

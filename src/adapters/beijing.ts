@@ -5,6 +5,7 @@ import type { DetailDocument, ParseDetailContext, ParsedNoticeRecord, ParsedResu
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 
 const config: GenericSiteConfig = {
@@ -214,7 +215,14 @@ class BeijingSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const parcelNo = firstNonEmpty(fields.parcelNo, extractBeijingParcelNo(title));
     const district = extractBeijingLocation(title, fields.noticeNo);
     const noticeNoNorm = normalizeNoticeNo(fields.noticeNo);
-    const sourceKey = `${context.task.pageNo}:${context.task.itemIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`;
+    const sourceKey = buildStableSourceKey(this.siteCode, bizType, [
+      noticeNoNorm,
+      parcelNo,
+      fields.noticeDate,
+      fields.tradeDate,
+      title,
+      sourceUrl
+    ]);
 
     if (bizType === "notice") {
       return [

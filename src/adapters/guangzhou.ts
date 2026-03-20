@@ -5,6 +5,7 @@ import type { ParseDetailContext, ParsedNoticeRecord, ParsedResultRecord } from 
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { clickFirstVisible } from "../utils/browser-utils.js";
 
@@ -141,7 +142,7 @@ class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
       return [
         {
           siteCode: this.siteCode,
-          sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+          sourceKey: buildStableSourceKey(this.siteCode, "notice", [noticeNoNorm, parcelNo, title, sourceUrl]),
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
@@ -186,7 +187,7 @@ class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
     return [
       {
         siteCode: this.siteCode,
-        sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+        sourceKey: buildStableSourceKey(this.siteCode, "result", [noticeNoNorm, parcelNo, resultTitle, sourceUrl]),
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,

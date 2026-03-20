@@ -47,6 +47,17 @@ npm run collect-all
 - `--max-items N`
 - `--headless true|false`
 
+江苏/浙江限频保护：
+- 站点：`suzhou`、`wuxi`、`changzhou`、`hangzhou`、`ningbo`
+- 默认强限频：详情并发 `1`，额外延迟 `>=2500ms`
+- 即使环境变量误配更高并发，运行时也会被硬性钳制，避免触发站点访问频率限制
+
+质量门禁（默认开启）：
+- `CRAWL_MAX_FAILURES`：允许失败任务数，默认 `0`
+- `CRAWL_MAX_FAILURE_RATE`：允许失败率，默认 `0.02`
+
+当失败数和失败率同时超过阈值时，本次站点抓取会判定为失败（`crawl_runs.status=failed`）。
+
 ## 输出
 
 - MySQL 原始表：`land_notice_raw`、`land_result_raw`

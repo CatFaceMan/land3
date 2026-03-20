@@ -1,15 +1,5 @@
-export type SiteCode =
-  | "beijing"
-  | "suzhou"
-  | "wuxi"
-  | "changzhou"
-  | "hangzhou"
-  | "ningbo"
-  | "guangzhou"
-  | "hefei"
-  | "chengdu"
-  | "xian"
-  | "wuhan";
+import type { SiteCode } from "./sites.js";
+export type { SiteCode } from "./sites.js";
 
 export type BizType = "notice" | "result";
 export type NavigationStrategy = "return" | "reopen";

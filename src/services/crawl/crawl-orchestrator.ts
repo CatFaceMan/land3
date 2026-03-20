@@ -1,5 +1,6 @@
 import pLimit from "p-limit";
 import { getAdapter } from "../../adapters/registry.js";
+import { isRateLimitedSite } from "../../domain/sites.js";
 import type { CrawlRunSummary, ParsedNoticeRecord, ParsedResultRecord } from "../../domain/types.js";
 import { BrowserKernel } from "../../kernel/browser-kernel.js";
 import { CheckpointStore } from "./checkpoint-store.js";
@@ -34,8 +35,11 @@ export class CrawlOrchestrator {
     const retryPolicy = new RetryPolicy(context.config.browser.retry.detailRetries + 1);
     const executor = new TaskExecutor(adapter, kernel, retryPolicy);
     const siteRuntime = context.config.sites[context.siteCode];
-    const detailConcurrency = Math.max(1, siteRuntime.detailConcurrency ?? 5);
-    const extraDelayMs = Math.max(0, siteRuntime.extraDelayMs ?? 0);
+    const rateLimited = isRateLimitedSite(context.siteCode);
+    const configuredDetailConcurrency = Math.max(1, siteRuntime.detailConcurrency ?? 5);
+    const configuredExtraDelayMs = Math.max(0, siteRuntime.extraDelayMs ?? 0);
+    const detailConcurrency = rateLimited ? 1 : configuredDetailConcurrency;
+    const extraDelayMs = rateLimited ? Math.max(2_500, configuredExtraDelayMs) : configuredExtraDelayMs;
 
     const notices: ParsedNoticeRecord[] = [];
     const results: ParsedResultRecord[] = [];

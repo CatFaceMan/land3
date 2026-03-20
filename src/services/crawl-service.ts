@@ -1,4 +1,4 @@
-import type { AppConfig, BizType, ParsedNoticeRecord, ParsedResultRecord, SiteCode } from "../domain/types.js";
+import type { AppConfig, BizType, CrawlRunSummary, ParsedNoticeRecord, ParsedResultRecord, SiteCode } from "../domain/types.js";
 import { LandRepository } from "../db/repository.js";
 import { CrawlOrchestrator } from "./crawl/crawl-orchestrator.js";
 
@@ -25,6 +25,31 @@ export interface CrawlOutput {
   results: ParsedResultRecord[];
 }
 
+function readEnvNumber(name: string, fallback: number): number {
+  const raw = process.env[name]?.trim();
+  if (!raw) {
+    return fallback;
+  }
+  const value = Number(raw);
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid numeric env ${name}: ${raw}`);
+  }
+  return value;
+}
+
+function assertQuality(summary: CrawlRunSummary): void {
+  const maxFailures = Math.max(0, readEnvNumber("CRAWL_MAX_FAILURES", 0));
+  const maxFailureRate = Math.max(0, readEnvNumber("CRAWL_MAX_FAILURE_RATE", 0.02));
+  const processedTasks = summary.metrics?.processedTasks ?? summary.noticesSaved + summary.resultsSaved + summary.failures;
+  const failureRate = processedTasks > 0 ? summary.failures / processedTasks : (summary.failures > 0 ? 1 : 0);
+  if (summary.failures <= maxFailures || failureRate <= maxFailureRate) {
+    return;
+  }
+  throw new Error(
+    `Quality gate failed for ${summary.siteCode}/${summary.bizType}: failures=${summary.failures}, processed=${processedTasks}, failureRate=${failureRate.toFixed(4)}, maxFailures=${maxFailures}, maxFailureRate=${maxFailureRate}`
+  );
+}
+
 export async function runCrawl(params: {
   config: AppConfig;
   repository: LandRepository;
@@ -44,6 +69,7 @@ export async function runCrawl(params: {
     to: params.to
   });
   const orchestrator = new CrawlOrchestrator();
+  let latestSummary: CrawlRunSummary | null = null;
 
   try {
     const output = await orchestrator.run({
@@ -56,6 +82,8 @@ export async function runCrawl(params: {
       to: params.to,
       maxItems: params.maxItems
     });
+    latestSummary = output.summary;
+    assertQuality(output.summary);
     if (params.bizType === "notice") {
       params.onNotices?.(output.notices);
     } else {
@@ -64,17 +92,19 @@ export async function runCrawl(params: {
     await params.repository.finishCrawlRun(runId, "success", output.summary);
     return output;
   } catch (error) {
-    await params.repository.finishCrawlRun(
-      runId,
-      "failed",
-      {
+    const fallbackSummary: CrawlRunSummary =
+      latestSummary ?? {
         siteCode: params.siteCode,
         bizType: params.bizType,
         noticesSaved: 0,
         resultsSaved: 0,
         failures: 1,
         pagesVisited: 0
-      },
+      };
+    await params.repository.finishCrawlRun(
+      runId,
+      "failed",
+      fallbackSummary,
       error instanceof Error ? error.message : String(error)
     );
     throw error;

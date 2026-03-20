@@ -5,6 +5,7 @@ import type { ParseDetailContext, ParsedNoticeRecord, ParsedResultRecord } from 
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { findHeaderIndex } from "../utils/table-parser.js";
 
@@ -127,7 +128,13 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
         );
         return {
           siteCode: this.siteCode,
-          sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+          sourceKey: buildStableSourceKey(this.siteCode, "notice", [
+            noticeNoNorm,
+            parcelNo,
+            row.join("|"),
+            detailTitle,
+            sourceUrl
+          ]),
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
@@ -152,7 +159,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
         : [
             {
               siteCode: this.siteCode,
-              sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${noticeNoNorm ?? sourceUrl}`,
+              sourceKey: buildStableSourceKey(this.siteCode, "notice", [noticeNoNorm, detailTitle, sourceUrl]),
               sourceUrl,
               sourceTitle: context.listItem.title,
               city: this.cityName,
@@ -184,7 +191,13 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
       const dealPriceWan = parseChineseNumber(dealIdx >= 0 ? row[dealIdx] : null);
       return {
         siteCode: this.siteCode,
-        sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+        sourceKey: buildStableSourceKey(this.siteCode, "result", [
+          noticeNoNorm,
+          parcelNo,
+          row.join("|"),
+          detailTitle,
+          sourceUrl
+        ]),
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
@@ -209,7 +222,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
       : [
           {
             siteCode: this.siteCode,
-            sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${noticeNoNorm ?? sourceUrl}`,
+            sourceKey: buildStableSourceKey(this.siteCode, "result", [noticeNoNorm, detailTitle, sourceUrl]),
             sourceUrl,
             sourceTitle: context.listItem.title,
             city: this.cityName,

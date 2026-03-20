@@ -1,21 +1,10 @@
 import { resolve } from "node:path";
 import type { AppConfig, ProxyProfile, SiteCode } from "./domain/types.js";
+import { RATE_LIMITED_SITE_CODES, SITE_CODES } from "./domain/sites.js";
 
-export const SUPPORTED_SITE_CODES: SiteCode[] = [
-  "beijing",
-  "suzhou",
-  "wuxi",
-  "changzhou",
-  "hangzhou",
-  "ningbo",
-  "guangzhou",
-  "hefei",
-  "chengdu",
-  "xian",
-  "wuhan"
-];
+export const SUPPORTED_SITE_CODES: SiteCode[] = [...SITE_CODES];
 
-const RATE_LIMITED_SITES = new Set<SiteCode>(["suzhou", "wuxi", "changzhou", "hangzhou", "ningbo"]);
+const RATE_LIMITED_SITES = new Set<SiteCode>(RATE_LIMITED_SITE_CODES);
 
 function readNumber(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
@@ -77,8 +66,8 @@ export function loadConfig(options?: { allowMissingDatabaseUrl?: boolean }): App
       SUPPORTED_SITE_CODES.map((siteCode) => {
         const prefix = `SITE_${siteCode.toUpperCase()}`;
         const proxyProfile = process.env[`${prefix}_PROXY_PROFILE`]?.trim();
-        const defaultDetailConcurrency = RATE_LIMITED_SITES.has(siteCode) ? 2 : 5;
-        const defaultExtraDelayMs = RATE_LIMITED_SITES.has(siteCode) ? 1200 : 0;
+        const defaultDetailConcurrency = RATE_LIMITED_SITES.has(siteCode) ? 1 : 5;
+        const defaultExtraDelayMs = RATE_LIMITED_SITES.has(siteCode) ? 2500 : 0;
         return [
           siteCode,
           {

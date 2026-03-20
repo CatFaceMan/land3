@@ -5,6 +5,7 @@ import type { ListItemSummary, ParseDetailContext, ParsedNoticeRecord, ParsedRes
 import { normalizeDate } from "../utils/date.js";
 import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
+import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { clickFirstVisible } from "../utils/browser-utils.js";
 import { normalizeHeader, findHeaderIndex } from "../utils/table-parser.js";
@@ -197,7 +198,13 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
         const tradeDateRaw = row[7] ?? null;
         return {
           siteCode: this.siteCode,
-          sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+          sourceKey: buildStableSourceKey(this.siteCode, "notice", [
+            noticeNoNorm,
+            parcelNo,
+            row.join("|"),
+            title,
+            sourceUrl
+          ]),
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
@@ -232,7 +239,13 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
       const winner = row[6] ?? null;
       return {
         siteCode: this.siteCode,
-        sourceKey: `${context.task.pageNo}:${context.task.itemIndex}:${rowIndex}:${noticeNoNorm ?? parcelNo ?? sourceUrl}`,
+        sourceKey: buildStableSourceKey(this.siteCode, "result", [
+          noticeNoNorm,
+          parcelNo,
+          row.join("|"),
+          title,
+          sourceUrl
+        ]),
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
