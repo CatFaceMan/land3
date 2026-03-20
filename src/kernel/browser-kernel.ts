@@ -1,6 +1,5 @@
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import type { AppConfig, ArtifactPaths, BizType, FailureRecord, ProxyProfile, SiteCode } from "../domain/types.js";
-import { saveArtifactBundle } from "./artifacts.js";
+import type { AppConfig, ProxyProfile, SiteCode } from "../domain/types.js";
 
 export class BrowserKernel {
   private browser: Browser | null = null;
@@ -85,31 +84,6 @@ export class BrowserKernel {
     this.context = null;
     this.browser = null;
     await this.start();
-  }
-
-  public async captureFailureArtifacts(bizType: BizType, key: string): Promise<ArtifactPaths> {
-    const page = await this.getPage();
-    const screenshot = await page.screenshot({ fullPage: true }).catch(() => null);
-    const html = await page.content().catch(() => null);
-    return saveArtifactBundle({
-      artifactRoot: this.config.artifactRoot,
-      siteCode: this.siteCode,
-      bizType,
-      key,
-      screenshot,
-      html
-    });
-  }
-
-  public async createFailureRecord(input: Omit<FailureRecord, "currentUrl" | "screenshotPath" | "htmlPath">): Promise<FailureRecord> {
-    const page = await this.getPage();
-    const artifacts = await this.captureFailureArtifacts(input.bizType, `${input.pageNo}-${input.itemIndex}-${input.stage}`);
-    return {
-      ...input,
-      currentUrl: page.url(),
-      screenshotPath: artifacts.screenshotPath,
-      htmlPath: artifacts.htmlPath
-    };
   }
 
   public async close(): Promise<void> {

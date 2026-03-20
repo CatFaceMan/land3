@@ -3,7 +3,6 @@ import { getAdapter } from "../../adapters/registry.js";
 import { isRateLimitedSite } from "../../domain/sites.js";
 import type { CrawlRunSummary, ParsedNoticeRecord, ParsedResultRecord } from "../../domain/types.js";
 import { BrowserKernel } from "../../kernel/browser-kernel.js";
-import { CheckpointStore } from "./checkpoint-store.js";
 import { CrawlLogger } from "./logger.js";
 import { RetryPolicy } from "./retry-policy.js";
 import { TaskExecutor } from "./task-executor.js";
@@ -30,8 +29,7 @@ export class CrawlOrchestrator {
   public async run(context: CrawlContext): Promise<CrawlOrchestratorOutput> {
     const adapter = getAdapter(context.siteCode);
     const kernel = new BrowserKernel(context.config, context.siteCode, resolveProxy(context));
-    const checkpointStore = new CheckpointStore(context.repository);
-    const scheduler = new TaskScheduler(adapter, checkpointStore);
+    const scheduler = new TaskScheduler(adapter);
     const retryPolicy = new RetryPolicy(context.config.browser.retry.detailRetries + 1);
     const executor = new TaskExecutor(adapter, kernel, retryPolicy);
     const siteRuntime = context.config.sites[context.siteCode];
@@ -95,15 +93,6 @@ export class CrawlOrchestrator {
                 stage: "detail",
                 attempt: task.attempt + 1
               });
-              await context.repository.updateTaskStatus(
-                task.siteCode,
-                task.bizType,
-                task.pageNo,
-                task.itemIndex,
-                "running",
-                task.attempt + 1,
-                null
-              );
               const output = await executor.execute(context, task, listPage, fromDate);
               return { task, output };
             })
@@ -183,15 +172,6 @@ export class CrawlOrchestrator {
             stage: "detail",
             attempt: task.attempt + 1
           });
-          await context.repository.updateTaskStatus(
-            task.siteCode,
-            task.bizType,
-            task.pageNo,
-            task.itemIndex,
-            "running",
-            task.attempt + 1,
-            null
-          );
           const output = await executor.execute(context, task, listPage, fromDate);
           listPage = output.listPage;
           const shouldStop = await this.handleTaskOutput(context, output.result.task, output, summary, notices, results);
@@ -272,7 +252,6 @@ export class CrawlOrchestrator {
         siteHealthScore: processedTasks > 0 ? Number((Math.max(0, 1 - failedTasks / processedTasks) * 100).toFixed(2)) : 100
       };
 
-      await context.repository.clearTaskState(context.siteCode, context.bizType);
       return { summary, notices, results };
     } finally {
       await kernel.close();
@@ -287,16 +266,6 @@ export class CrawlOrchestrator {
     notices: ParsedNoticeRecord[],
     results: ParsedResultRecord[]
   ): Promise<boolean> {
-    await context.repository.updateTaskStatus(
-      task.siteCode,
-      task.bizType,
-      task.pageNo,
-      task.itemIndex,
-      output.result.status === "failed" ? "retryable" : output.result.status,
-      task.attempt,
-      output.result.lastError
-    );
-
     if (output.result.status === "succeeded") {
       if (context.bizType === "notice") {
         await context.repository.upsertNoticeBatch(output.notices);
@@ -350,21 +319,8 @@ export class CrawlOrchestrator {
     reason: unknown,
     listPage: Awaited<ReturnType<BrowserKernel["getPage"]>>
   ): Promise<Awaited<ReturnType<TaskExecutor["execute"]>>> {
+    void context;
     const message = reason instanceof Error ? reason.message : String(reason);
-    await context.repository.saveFailure({
-      siteCode: context.siteCode,
-      bizType: context.bizType,
-      pageNo: task.pageNo,
-      itemIndex: task.itemIndex,
-      stage: "detail",
-      itemTitle: task.listItem.title,
-      errorMessage: message,
-      currentUrl: task.listItem.url ?? listPage.url(),
-      screenshotPath: null,
-      htmlPath: null,
-      l1Index: null,
-      l2Index: null
-    });
     return {
       result: {
         task: { ...task, attempt: task.attempt + 1 },

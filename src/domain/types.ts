@@ -61,26 +61,6 @@ export interface CheckpointRecord extends CrawlTaskState {
   updatedAt: Date;
 }
 
-export interface FailureRecord {
-  siteCode: SiteCode;
-  bizType: BizType;
-  pageNo: number;
-  itemIndex: number;
-  stage: TaskStage;
-  currentUrl: string | null;
-  itemTitle: string | null;
-  screenshotPath: string | null;
-  htmlPath: string | null;
-  errorMessage: string;
-  l1Index?: number | null;
-  l2Index?: number | null;
-}
-
-export interface ArtifactPaths {
-  screenshotPath: string | null;
-  htmlPath: string | null;
-}
-
 export interface AttachmentLink {
   text: string;
   url: string;
@@ -213,16 +193,3 @@ export interface CrawlMetrics {
   siteHealthScore: number;
 }
 
-export interface CrawlTaskRecord {
-  siteCode: SiteCode;
-  bizType: BizType;
-  pageNo: number;
-  itemIndex: number;
-  status: CrawlTaskStatus;
-  attempt: number;
-  title: string | null;
-  url: string | null;
-  publishedAt: string | null;
-  lastError: string | null;
-  updatedAt: Date;
-}

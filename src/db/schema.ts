@@ -1,74 +1,8 @@
-import type { Pool } from "mysql2/promise";
+import type { Pool, RowDataPacket } from "mysql2/promise";
 
 export async function ensureSchema(pool: Pool): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS crawl_runs (
-      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-      site_code VARCHAR(32) NOT NULL COMMENT '站点编码',
-      biz_type VARCHAR(16) NOT NULL COMMENT '业务类型',
-      range_from DATE NULL COMMENT '抓取起始日期',
-      range_to DATE NULL COMMENT '抓取结束日期',
-      status VARCHAR(16) NOT NULL COMMENT '运行状态',
-      stats_json JSON NULL COMMENT '统计信息JSON',
-      error_message TEXT NULL COMMENT '错误信息',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间'
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='爬取任务运行记录';
-  `);
-
   await createBusinessTables(pool);
-
-  await createCrawlRuntimeTables(pool);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS crawl_failures (
-      id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
-      site_code VARCHAR(32) NOT NULL COMMENT '站点编码',
-      biz_type VARCHAR(16) NOT NULL COMMENT '业务类型',
-      page_no INT NOT NULL COMMENT '页码',
-      item_index INT NOT NULL COMMENT '列表项索引',
-      stage VARCHAR(32) NOT NULL COMMENT '阶段',
-      current_url TEXT NULL COMMENT '当前页面URL',
-      item_title TEXT NULL COMMENT '条目标题',
-      screenshot_path TEXT NULL COMMENT '截图路径',
-      html_path TEXT NULL COMMENT 'HTML路径',
-      error_message TEXT NOT NULL COMMENT '错误信息',
-      l1_index INT NULL COMMENT '一级索引',
-      l2_index INT NULL COMMENT '二级索引',
-      created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间'
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='爬取失败明细日志';
-  `);
-
-}
-
-async function createCrawlRuntimeTables(pool: Pool): Promise<void> {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS crawl_watermark (
-      site_code VARCHAR(32) NOT NULL COMMENT '站点编码',
-      biz_type VARCHAR(16) NOT NULL COMMENT '业务类型',
-      page_no INT NOT NULL COMMENT '最新完成页码',
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-      PRIMARY KEY (site_code, biz_type)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='爬取进度水位';
-  `);
-
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS crawl_task_state (
-      site_code VARCHAR(32) NOT NULL COMMENT '站点编码',
-      biz_type VARCHAR(16) NOT NULL COMMENT '业务类型',
-      page_no INT NOT NULL COMMENT '页码',
-      item_index INT NOT NULL COMMENT '列表项索引',
-      status VARCHAR(16) NOT NULL COMMENT '任务状态',
-      attempt INT NOT NULL DEFAULT 0 COMMENT '尝试次数',
-      item_title TEXT NULL COMMENT '条目标题',
-      item_url TEXT NULL COMMENT '条目链接',
-      published_at VARCHAR(64) NULL COMMENT '发布时间原文',
-      last_error TEXT NULL COMMENT '最后错误信息',
-      updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-      PRIMARY KEY (site_code, biz_type, page_no, item_index),
-      KEY idx_task_status (site_code, biz_type, status, page_no)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='任务级断点状态';
-  `);
+  await dropUnusedCrawlTables(pool);
 }
 
 async function createBusinessTables(pool: Pool): Promise<void> {
@@ -76,7 +10,6 @@ async function createBusinessTables(pool: Pool): Promise<void> {
     CREATE TABLE IF NOT EXISTS land_notice_raw (
       id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
       site_code VARCHAR(32) NOT NULL COMMENT '站点编码',
-      source_key VARCHAR(512) NOT NULL COMMENT '源唯一键',
       source_url TEXT NOT NULL COMMENT '来源URL',
       source_title TEXT NULL COMMENT '来源标题',
       city VARCHAR(64) NOT NULL COMMENT '城市',
@@ -97,17 +30,17 @@ async function createBusinessTables(pool: Pool): Promise<void> {
       attachments_json JSON NULL COMMENT '附件JSON',
       crawl_time DATETIME NOT NULL COMMENT '抓取时间',
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-      UNIQUE KEY uk_notice_source (site_code, source_key),
+      UNIQUE KEY uk_notice_parcel_no (parcel_no),
       KEY idx_notice_trade_date (site_code, trade_date),
       KEY idx_notice_no (site_code, notice_no_norm)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='公告原始明细';
   `);
+  await migrateLandNoticeRawToParcelNoKey(pool);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS land_result_raw (
       id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY COMMENT '主键ID',
       site_code VARCHAR(32) NOT NULL COMMENT '站点编码',
-      source_key VARCHAR(512) NOT NULL COMMENT '源唯一键',
       source_url TEXT NOT NULL COMMENT '来源URL',
       source_title TEXT NULL COMMENT '来源标题',
       city VARCHAR(64) NOT NULL COMMENT '城市',
@@ -127,11 +60,13 @@ async function createBusinessTables(pool: Pool): Promise<void> {
       attachments_json JSON NULL COMMENT '附件JSON',
       crawl_time DATETIME NOT NULL COMMENT '抓取时间',
       updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
-      UNIQUE KEY uk_result_source (site_code, source_key),
+      UNIQUE KEY uk_result_parcel_no (parcel_no),
       KEY idx_result_trade_date (site_code, deal_date),
       KEY idx_result_status (site_code, status)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='结果原始明细';
   `);
+
+  await migrateLandResultRawToParcelNoKey(pool);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS land_record (
@@ -176,4 +111,97 @@ async function createBusinessTables(pool: Pool): Promise<void> {
       KEY idx_review_reason (site_code, reason_code)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci COMMENT='异常复核池';
   `);
+}
+
+async function dropUnusedCrawlTables(pool: Pool): Promise<void> {
+  await pool.query(`DROP TABLE IF EXISTS crawl_task_state`);
+  await pool.query(`DROP TABLE IF EXISTS crawl_watermark`);
+  await pool.query(`DROP TABLE IF EXISTS crawl_failures`);
+  await pool.query(`DROP TABLE IF EXISTS crawl_runs`);
+}
+
+async function migrateLandResultRawToParcelNoKey(pool: Pool): Promise<void> {
+  interface CountRow extends RowDataPacket {
+    cnt: number;
+  }
+
+  const [columnRows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'land_result_raw'
+       AND column_name = 'source_key'`
+  );
+  const hasSourceKeyColumn = Number(columnRows[0]?.cnt ?? 0) > 0;
+
+  const [legacyIndexRows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'land_result_raw'
+       AND index_name = 'uk_result_source'`
+  );
+  const hasLegacyIndex = Number(legacyIndexRows[0]?.cnt ?? 0) > 0;
+
+  if (hasLegacyIndex) {
+    await pool.query(`ALTER TABLE land_result_raw DROP INDEX uk_result_source`);
+  }
+  if (hasSourceKeyColumn) {
+    await pool.query(`ALTER TABLE land_result_raw DROP COLUMN source_key`);
+  }
+
+  const [parcelIndexRows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'land_result_raw'
+       AND index_name = 'uk_result_parcel_no'`
+  );
+  const hasParcelUniqueIndex = Number(parcelIndexRows[0]?.cnt ?? 0) > 0;
+  if (!hasParcelUniqueIndex) {
+    await pool.query(`ALTER TABLE land_result_raw ADD UNIQUE KEY uk_result_parcel_no (parcel_no)`);
+  }
+}
+
+async function migrateLandNoticeRawToParcelNoKey(pool: Pool): Promise<void> {
+  interface CountRow extends RowDataPacket {
+    cnt: number;
+  }
+
+  const [columnRows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.columns
+     WHERE table_schema = DATABASE()
+       AND table_name = 'land_notice_raw'
+       AND column_name = 'source_key'`
+  );
+  const hasSourceKeyColumn = Number(columnRows[0]?.cnt ?? 0) > 0;
+
+  const [legacyIndexRows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'land_notice_raw'
+       AND index_name = 'uk_notice_source'`
+  );
+  const hasLegacyIndex = Number(legacyIndexRows[0]?.cnt ?? 0) > 0;
+
+  if (hasLegacyIndex) {
+    await pool.query(`ALTER TABLE land_notice_raw DROP INDEX uk_notice_source`);
+  }
+  if (hasSourceKeyColumn) {
+    await pool.query(`ALTER TABLE land_notice_raw DROP COLUMN source_key`);
+  }
+
+  const [parcelIndexRows] = await pool.query<CountRow[]>(
+    `SELECT COUNT(*) AS cnt
+     FROM information_schema.statistics
+     WHERE table_schema = DATABASE()
+       AND table_name = 'land_notice_raw'
+       AND index_name = 'uk_notice_parcel_no'`
+  );
+  const hasParcelUniqueIndex = Number(parcelIndexRows[0]?.cnt ?? 0) > 0;
+  if (!hasParcelUniqueIndex) {
+    await pool.query(`ALTER TABLE land_notice_raw ADD UNIQUE KEY uk_notice_parcel_no (parcel_no)`);
+  }
 }

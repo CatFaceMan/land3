@@ -1,4 +1,4 @@
-import type { BizType, CrawlTaskRecord, CrawlTaskStatus, SiteCode } from "../../domain/types.js";
+import type { BizType, CrawlTaskStatus, SiteCode } from "../../domain/types.js";
 import type { AppConfig, ListItemSummary } from "../../domain/types.js";
 import type { LandRepository } from "../../db/repository.js";
 
@@ -29,19 +29,4 @@ export interface TaskResult {
   durationMs: number;
   lastError: string | null;
   stopByFromDate: boolean;
-}
-
-export function toTaskRecord(task: ItemTask, status?: CrawlTaskStatus, lastError?: string | null): Omit<CrawlTaskRecord, "updatedAt"> {
-  return {
-    siteCode: task.siteCode,
-    bizType: task.bizType,
-    pageNo: task.pageNo,
-    itemIndex: task.itemIndex,
-    status: status ?? task.status,
-    attempt: task.attempt,
-    title: task.listItem.title,
-    url: task.listItem.url ?? null,
-    publishedAt: task.listItem.publishedAt ?? null,
-    lastError: lastError ?? null
-  };
 }

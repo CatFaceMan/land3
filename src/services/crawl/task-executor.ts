@@ -1,7 +1,6 @@
 import type { Page } from "playwright";
 import type { SiteAdapter } from "../../adapters/site-adapter.js";
 import type { ParsedNoticeRecord, ParsedResultRecord } from "../../domain/types.js";
-import { saveArtifactBundle } from "../../kernel/artifacts.js";
 import type { BrowserKernel } from "../../kernel/browser-kernel.js";
 import { toDateOrNull } from "../../utils/date.js";
 import type { RetryPolicy } from "./retry-policy.js";
@@ -124,28 +123,7 @@ export class TaskExecutor {
     }
 
     const message = lastError?.message ?? "Unknown error";
-    const artifacts = await saveArtifactBundle({
-      artifactRoot: context.config.artifactRoot,
-      siteCode: context.siteCode,
-      bizType: context.bizType,
-      key: `${task.pageNo}-${task.itemIndex}-detail-error`,
-      screenshot: await workingPage.screenshot({ fullPage: true }).catch(() => null),
-      html: await workingPage.content().catch(() => null)
-    });
-    await context.repository.saveFailure({
-      siteCode: context.siteCode,
-      bizType: context.bizType,
-      pageNo: task.pageNo,
-      itemIndex: task.itemIndex,
-      stage: "detail",
-      itemTitle: task.listItem.title,
-      errorMessage: message,
-      currentUrl: workingPage.url(),
-      l1Index: null,
-      l2Index: null,
-      screenshotPath: artifacts.screenshotPath,
-      htmlPath: artifacts.htmlPath
-    });
+    void context;
     return {
       result: {
         task: { ...task, attempt },

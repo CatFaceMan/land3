@@ -62,51 +62,23 @@ export async function runCrawl(params: {
   onNotices?: (records: ParsedNoticeRecord[]) => void;
   onResults?: (records: ParsedResultRecord[]) => void;
 }): Promise<CrawlOutput> {
-  const runId = await params.repository.createCrawlRun({
+  const runId = Date.now();
+  const orchestrator = new CrawlOrchestrator();
+  const output = await orchestrator.run({
+    config: params.config,
+    repository: params.repository,
+    runId,
     siteCode: params.siteCode,
     bizType: params.bizType,
     from: params.from,
-    to: params.to
+    to: params.to,
+    maxItems: params.maxItems
   });
-  const orchestrator = new CrawlOrchestrator();
-  let latestSummary: CrawlRunSummary | null = null;
-
-  try {
-    const output = await orchestrator.run({
-      config: params.config,
-      repository: params.repository,
-      runId,
-      siteCode: params.siteCode,
-      bizType: params.bizType,
-      from: params.from,
-      to: params.to,
-      maxItems: params.maxItems
-    });
-    latestSummary = output.summary;
-    assertQuality(output.summary);
-    if (params.bizType === "notice") {
-      params.onNotices?.(output.notices);
-    } else {
-      params.onResults?.(output.results);
-    }
-    await params.repository.finishCrawlRun(runId, "success", output.summary);
-    return output;
-  } catch (error) {
-    const fallbackSummary: CrawlRunSummary =
-      latestSummary ?? {
-        siteCode: params.siteCode,
-        bizType: params.bizType,
-        noticesSaved: 0,
-        resultsSaved: 0,
-        failures: 1,
-        pagesVisited: 0
-      };
-    await params.repository.finishCrawlRun(
-      runId,
-      "failed",
-      fallbackSummary,
-      error instanceof Error ? error.message : String(error)
-    );
-    throw error;
+  assertQuality(output.summary);
+  if (params.bizType === "notice") {
+    params.onNotices?.(output.notices);
+  } else {
+    params.onResults?.(output.results);
   }
+  return output;
 }
