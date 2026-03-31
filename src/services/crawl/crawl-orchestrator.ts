@@ -76,7 +76,7 @@ export class CrawlOrchestrator {
     let failedTasks = 0;
     let retriedTasks = 0;
     let taskDurationSum = 0;
-    const fromDate = context.from ? new Date(context.from) : undefined;
+    const from = context.from;
     let stopByFromDate = false;
 
     try {
@@ -114,7 +114,7 @@ export class CrawlOrchestrator {
                 stage: "detail",
                 attempt: task.attempt + 1
               });
-              const output = await executor.execute(context, task, listPage, fromDate);
+              const output = await executor.execute(context, task, listPage, from);
               return { task, output };
             })
           )
@@ -203,7 +203,7 @@ export class CrawlOrchestrator {
             stage: "detail",
             attempt: task.attempt + 1
           });
-          const output = await executor.execute(context, task, listPage, fromDate);
+          const output = await executor.execute(context, task, listPage, from);
           listPage = output.listPage;
           const shouldStop = await this.handleTaskOutput(context, output.result.task, output, summary, notices, results);
           processedTasks += 1;

@@ -452,6 +452,10 @@ function normalizeNoticeNoBySite(siteCode: SiteCode, noticeNoRaw: string | null)
   return noticeNoRaw;
 }
 
+function isHangzhouLikeSite(siteCode: SiteCode): boolean {
+  return siteCode === "hangzhou" || siteCode === "ningbo";
+}
+
 function normalizeZhejiangLabel(value: string | null | undefined): string {
   return cleanText(value)
     .replace(/[:：\s]/g, "")
@@ -900,7 +904,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const hangzhouStrictDistrict = normalizeDistrictValue(descriptionFields["所属行政区"] ?? null);
     const hangzhouStrictPlotNo = cleanText(descriptionFields["地块编号宗地编码"] ?? "");
     const hangzhouStrictNoticeNo = extractZhejiangNoticeNo(announcementText);
-    if (this.siteCode === "hangzhou" && bizType === "notice") {
+    if (isHangzhouLikeSite(this.siteCode) && bizType === "notice") {
       if (!hangzhouStrictDistrict || !hangzhouStrictPlotNo || !hangzhouStrictNoticeNo) {
         throw new Error(
           `hangzhou strict field missing: district=${hangzhouStrictDistrict ?? "null"}, ` +
@@ -926,14 +930,14 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
             noticeNoRaw: null
           };
     const parcelNoRaw = firstNonEmpty(
-      this.siteCode === "hangzhou" && bizType === "notice" ? hangzhouStrictPlotNo : null,
+      isHangzhouLikeSite(this.siteCode) && bizType === "notice" ? hangzhouStrictPlotNo : null,
       noticeOverrides.parcelNo,
       text.match(/地块编号（宗地编码）：\s*([^地]+?)\s*地块名称：/)?.[1],
       summary.match(/#([^#|]+?)(?:保证金到账截止时间|起始价|挂牌时间|拍卖时间|拍卖开始|$)/)?.[1]
     );
     const parcelNo = parcelNoRaw;
     const district = firstNonEmpty(
-      this.siteCode === "hangzhou" && bizType === "notice" ? hangzhouStrictDistrict : null,
+      isHangzhouLikeSite(this.siteCode) && bizType === "notice" ? hangzhouStrictDistrict : null,
       normalizeDistrictValue(noticeOverrides.district),
       normalizeDistrictValue(extractZhejiangDistrictFromTitle(headerLines.titleLine)),
       normalizeDistrictValue(extractZhejiangDistrict(text, summary))
@@ -965,7 +969,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       text.match(/(公告期|挂牌期|竞价期|交易结束|结果公示|终止|已成交)/)?.[1]
     );
     const noticeNoRawRaw = normalizeNoticeNoBySite(this.siteCode, normalizeNoticeNoForDb(firstNonEmpty(
-      this.siteCode === "hangzhou" && bizType === "notice" ? hangzhouStrictNoticeNo : null,
+      isHangzhouLikeSite(this.siteCode) && bizType === "notice" ? hangzhouStrictNoticeNo : null,
       headerLines.subTitleLine,
       noticeOverrides.noticeNoRaw,
       extractZhejiangNoticeNo(announcementText),

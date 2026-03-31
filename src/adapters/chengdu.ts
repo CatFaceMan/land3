@@ -63,6 +63,17 @@ function parseRows(rawRows: string[][], marker: string): { headers: string[]; ro
   return { headers, rows: dataRows };
 }
 
+function parseResultRows(rawRows: string[][]): { headers: string[]; rows: string[][] } {
+  const rows = rawRows.map((row) => row.map((cell) => cleanText(cell))).filter((row) => row.some(Boolean));
+  const headerIndex = rows.findIndex((row) => row.some((cell) => normalizeHeader(cell).includes(normalizeHeader("宗地编号"))));
+  if (headerIndex < 0) {
+    return { headers: [], rows: [] };
+  }
+  const headers = rows[headerIndex] ?? [];
+  const dataRows = rows.slice(headerIndex + 1).filter((row) => row.some(Boolean) && row.length >= Math.max(4, headers.length - 1));
+  return { headers, rows: dataRows };
+}
+
 function parsePriceByMu(raw: string | null, areaMuRaw: string | null): number | null {
   if (!raw || !areaMuRaw) {
     return null;
@@ -98,13 +109,104 @@ function parseChengduStartPriceWan(raw: string | null, areaRaw: string | null): 
   if (!raw) {
     return null;
   }
-  if (/楼面地价|元\/平方米/.test(raw)) {
-    return null;
-  }
   if (/亩/.test(raw)) {
     return parsePriceByMu(raw, areaRaw);
   }
   return parseChineseNumber(raw);
+}
+
+function extractFirstNumber(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const number = Number(value.match(/-?\d+(?:\.\d+)?/)?.[0] ?? "");
+  return Number.isFinite(number) ? number : null;
+}
+
+function extractMaxBuildAreaSqm(value: string | null | undefined): number | null {
+  if (!value) {
+    return null;
+  }
+  const matches = [...value.matchAll(/(-?\d+(?:\.\d+)?)\s*平方米/g)].map((item) => Number(item[1]));
+  const numeric = matches.filter((item) => Number.isFinite(item));
+  if (numeric.length === 0) {
+    return null;
+  }
+  return Math.max(...numeric);
+}
+
+function parseFloorPriceTotalWan(startPriceRaw: string | null, areaRaw: string | null, planningText: string | null): number | null {
+  if (!startPriceRaw || !/楼面地价|元\/平方米/.test(startPriceRaw)) {
+    return null;
+  }
+  const unitPriceYuanPerSqm = extractFirstNumber(startPriceRaw);
+  if (!unitPriceYuanPerSqm) {
+    return null;
+  }
+  const buildAreaSqm = extractMaxBuildAreaSqm(planningText) ?? extractFirstNumber(areaRaw);
+  if (!buildAreaSqm) {
+    return null;
+  }
+  return Number(((unitPriceYuanPerSqm * buildAreaSqm) / 10000).toFixed(4));
+}
+
+function parseChengduTradeDate(raw: string | null): string | null {
+  if (!raw) {
+    return null;
+  }
+  const matches = [...raw.matchAll(/(\d{4}[年/-]\d{1,2}[月/-]\d{1,2}日?)/g)].map((item) => item[1]);
+  if (matches.length > 0) {
+    return normalizeDate(matches[matches.length - 1]);
+  }
+  return normalizeDate(raw);
+}
+
+function parseChengduDistrict(raw: string | null): string | null {
+  if (!raw) {
+    return null;
+  }
+  const normalized = cleanText(raw);
+  const districtOnly = normalized.match(/([\u4e00-\u9fa5]{2,20}?区)/)?.[1];
+  if (districtOnly) {
+    return districtOnly;
+  }
+  const firstSegment = cleanText(normalized.split(/[，,]/)[0]);
+  const match = firstSegment.match(/^(.+?(?:新区|区|市|县))/);
+  return cleanText(match?.[1] ?? firstSegment) || null;
+}
+
+function parseResultDateByTitle(title: string): string | null {
+  const dateCandidates = [...title.matchAll(/(\d{4}年\d{1,2}月\d{1,2}日)/g)].map((item) => item[1]);
+  if (dateCandidates.length === 0) {
+    return null;
+  }
+  return normalizeDate(dateCandidates[dateCandidates.length - 1]);
+}
+
+function extractTrailingBracketContent(title: string): string | null {
+  const text = cleanText(title);
+  if (!text) {
+    return null;
+  }
+  const end = Math.max(text.lastIndexOf(")"), text.lastIndexOf("）"));
+  if (end < 0) {
+    return null;
+  }
+  let depth = 0;
+  for (let index = end; index >= 0; index -= 1) {
+    const ch = text[index];
+    if (ch === ")" || ch === "）") {
+      depth += 1;
+      continue;
+    }
+    if (ch === "(" || ch === "（") {
+      depth -= 1;
+      if (depth === 0) {
+        return cleanText(text.slice(index + 1, end)) || null;
+      }
+    }
+  }
+  return null;
 }
 
 function normalizeNoticeRow(row: string[], previousTradeDate: string | null): { row: string[]; tradeDateText: string | null } {
@@ -182,6 +284,7 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
 
     if (bizType === "notice") {
       const noticeNoRaw = firstNonEmpty(
+        extractTrailingBracketContent(title),
         title.match(/成公资土(?:拍|挂)告\(\d{4}\)\d+号/)?.[0],
         text.match(/成公资土(?:拍|挂)告\(\d{4}\)\d+号/)?.[0]
       );
@@ -195,7 +298,8 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
         const areaRaw = row[3] ?? null;
         const usageRaw = row[4] ?? null;
         const startPriceRaw = row[5] ?? null;
-        const tradeDateRaw = row[7] ?? null;
+        const planningText = row.slice(8).join(" ");
+        const tradeDateRaw = tradeDateText ?? row[7] ?? null;
         return {
           siteCode: this.siteCode,
           sourceKey: buildStableSourceKey(this.siteCode, "notice", [
@@ -208,15 +312,15 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
           sourceUrl,
           sourceTitle: context.listItem.title,
           city: this.cityName,
-          district: row[2]?.split("，")[0] ?? null,
+          district: parseChengduDistrict(row[2] ?? null),
           noticeTitle: title,
-          noticeNoRaw: noticeNoRaw ?? parcelNo,
+          noticeNoRaw,
           noticeNoNorm,
           landUsage: usageRaw,
           areaHa: parseChengduAreaHa(areaRaw),
-          startPriceWan: parseChengduStartPriceWan(startPriceRaw, areaRaw),
+          startPriceWan: parseFloorPriceTotalWan(startPriceRaw, areaRaw, planningText) ?? parseChengduStartPriceWan(startPriceRaw, areaRaw),
           noticeDate,
-          tradeDate: normalizeDate(tradeDateRaw),
+          tradeDate: parseChengduTradeDate(tradeDateRaw),
           parcelNo,
           contentText: text,
           rawHtml: document.rawHtml,
@@ -226,17 +330,23 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
       });
     }
 
-    const noticeNoRaw = firstNonEmpty(
-      title.match(/\(\d{4}年\d{2}月\d{2}日到\d{4}年\d{2}月\d{2}日\)/)?.[0],
-      title.match(/挂牌会结果一览表\([^)]+\)/)?.[0]
-    );
-    const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
-    const { rows } = parseRows(rawRows, "宗地编号");
-    return rows.map((row, rowIndex) => {
-      const parcelNo = row[1] ?? null;
-      const areaRaw = row[3] ?? null;
-      const dealPriceRaw = row[5] ?? null;
-      const winner = row[6] ?? null;
+    const noticeNoRaw: string | null = null;
+    const noticeNoNorm: string | null = null;
+    const { headers, rows } = parseResultRows(rawRows);
+    const parcelNoIdx = findHeaderIndex(headers, ["宗地编号"]);
+    const locationIdx = findHeaderIndex(headers, ["宗地位置"]);
+    const areaIdx = findHeaderIndex(headers, ["净用地面积"]);
+    const dealPriceIdx = findHeaderIndex(headers, ["成交价"]);
+    const winnerIdx = findHeaderIndex(headers, ["竞得人"]);
+    const dealDateIdx = findHeaderIndex(headers, ["成交时间"]);
+
+    return rows.map((row) => {
+      const parcelNo = parcelNoIdx >= 0 ? row[parcelNoIdx] ?? null : row[1] ?? null;
+      const locationRaw = locationIdx >= 0 ? row[locationIdx] ?? null : row[2] ?? null;
+      const areaRaw = areaIdx >= 0 ? row[areaIdx] ?? null : row[3] ?? null;
+      const dealPriceRaw = dealPriceIdx >= 0 ? row[dealPriceIdx] ?? null : row[5] ?? null;
+      const winner = winnerIdx >= 0 ? row[winnerIdx] ?? null : row[6] ?? null;
+      const dealDateRaw = dealDateIdx >= 0 ? row[dealDateIdx] ?? null : null;
       return {
         siteCode: this.siteCode,
         sourceKey: buildStableSourceKey(this.siteCode, "result", [
@@ -249,14 +359,14 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
-        district: row[2]?.split("，")[0] ?? null,
+        district: parseChengduDistrict(locationRaw),
         resultTitle: title,
-        noticeNoRaw: noticeNoRaw ?? parcelNo,
+        noticeNoRaw,
         noticeNoNorm,
         dealPriceWan: /平方米/.test(dealPriceRaw ?? "") ? null : parsePriceByMu(dealPriceRaw, areaRaw) ?? parseChineseNumber(dealPriceRaw),
         winner,
         status: winner ? "已成交" : null,
-        dealDate: metaPubDate,
+        dealDate: normalizeDate(dealDateRaw) ?? parseResultDateByTitle(title) ?? metaPubDate,
         parcelNo,
         contentText: text,
         rawHtml: document.rawHtml,

@@ -2,24 +2,27 @@ import type { Page } from "playwright";
 import type { SiteAdapter } from "../../adapters/site-adapter.js";
 import type { ParsedNoticeRecord, ParsedResultRecord } from "../../domain/types.js";
 import type { BrowserKernel } from "../../kernel/browser-kernel.js";
-import { toDateOrNull } from "../../utils/date.js";
+import { normalizeDate } from "../../utils/date.js";
 import type { RetryPolicy } from "./retry-policy.js";
 import type { CrawlContext, ItemTask, TaskResult } from "./types.js";
 
-function shouldStopByFromDate(task: ItemTask, parsed: ParsedNoticeRecord[] | ParsedResultRecord[], fromDate: Date | undefined): boolean {
-  if (!fromDate) {
+function isBeforeFromDate(value: string | null | undefined, from: string | undefined): boolean {
+  if (!from) {
+    return false;
+  }
+  const normalizedValue = normalizeDate(value);
+  const normalizedFrom = normalizeDate(from);
+  return Boolean(normalizedValue && normalizedFrom && normalizedValue < normalizedFrom);
+}
+
+function shouldStopByFromDate(task: ItemTask, parsed: ParsedNoticeRecord[] | ParsedResultRecord[], from: string | undefined): boolean {
+  if (!from) {
     return false;
   }
   if (task.bizType === "notice") {
-    return (parsed as ParsedNoticeRecord[]).some((record) => {
-      const date = toDateOrNull(record.noticeDate);
-      return Boolean(date && date < fromDate);
-    });
+    return (parsed as ParsedNoticeRecord[]).some((record) => isBeforeFromDate(record.noticeDate, from));
   }
-  return (parsed as ParsedResultRecord[]).some((record) => {
-    const date = toDateOrNull(record.dealDate);
-    return Boolean(date && date < fromDate);
-  });
+  return (parsed as ParsedResultRecord[]).some((record) => isBeforeFromDate(record.dealDate, from));
 }
 
 export class TaskExecutor {
@@ -33,7 +36,7 @@ export class TaskExecutor {
     context: CrawlContext,
     task: ItemTask,
     listPage: Page,
-    fromDate: Date | undefined
+    from: string | undefined
   ): Promise<{ result: TaskResult; notices: ParsedNoticeRecord[]; results: ParsedResultRecord[]; listPage: Page }> {
     const startedAt = Date.now();
     let workingPage = listPage;
@@ -108,7 +111,7 @@ export class TaskExecutor {
             status: "succeeded",
             durationMs: Date.now() - startedAt,
             lastError: null,
-            stopByFromDate: shouldStopByFromDate(task, parsed, fromDate)
+            stopByFromDate: shouldStopByFromDate(task, parsed, from)
           },
           notices,
           results,

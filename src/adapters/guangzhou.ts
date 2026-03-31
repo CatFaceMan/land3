@@ -88,6 +88,28 @@ function pickAreaFromKvMap(kvMap: Record<string, string>): string | null {
   return null;
 }
 
+function pickLargestArea(candidates: Array<string | null | undefined>): string | null {
+  let best: { value: string; numeric: number } | null = null;
+  for (const candidate of candidates) {
+    if (!candidate) {
+      continue;
+    }
+    const normalized = cleanText(candidate);
+    const numericRaw = normalized.match(/([0-9]+(?:\.[0-9]+)?)/)?.[1];
+    if (!numericRaw) {
+      continue;
+    }
+    const numeric = Number(numericRaw);
+    if (!Number.isFinite(numeric)) {
+      continue;
+    }
+    if (!best || numeric > best.numeric) {
+      best = { value: numericRaw, numeric };
+    }
+  }
+  return best?.value ?? null;
+}
+
 class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
   public constructor() {
     super(config);
@@ -145,18 +167,18 @@ class GuangzhouSiteAdapter extends ConfiguredHtmlSiteAdapter {
 
     if (bizType === "notice") {
       const parcelNo = extractNoticeParcelNoFromHeaderTitle(headerTitle);
-      const areaRaw = firstNonEmpty(
+      const areaRaw = pickLargestArea([
         pickAreaFromKvMap(kvMap),
+        text.match(/总用地面积[^\d]*([0-9]+(?:\.[0-9]+)?)/)?.[1],
+        text.match(/出让宗地面积[^\d]*([0-9]+(?:\.[0-9]+)?)/)?.[1],
         text.match(/宗地面积[:：]?\s*([0-9.]+)平方米/)?.[1],
         text.match(/宗地面积(?:[（(][^)）]*[)）])?[:：]?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1],
-        text.match(/出让宗地面积([0-9.]+)/)?.[1],
-        text.match(/总用地面积([0-9.]+)/)?.[1],
         text.match(/总用地面积(?:[（(][^)）]*[)）])?[:：]?\s*([0-9]+(?:\.[0-9]+)?)/)?.[1],
         text.match(/宗地面积[（(]平方米[）)]\s*([0-9.]+)/)?.[1],
         text.match(/土地面积[（(]平方米[）)]\s*([0-9.]+)/)?.[1],
         text.match(/([0-9]+(?:\.[0-9]+)?)，全部为可建设用地/)?.[1],
         text.match(/([0-9]+(?:\.[0-9]+)?)[（(]可建设用地面积[0-9.]+[）)]/)?.[1]
-      );
+      ]);
       return [
         {
           siteCode: this.siteCode,
