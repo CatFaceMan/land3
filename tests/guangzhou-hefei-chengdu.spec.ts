@@ -4,7 +4,7 @@ import {
   extractGuangzhouParcelNoFromStructured
 } from "../src/adapters/guangzhou.js";
 import { resolveChengduResultNoticeNo } from "../src/adapters/chengdu.js";
-import { resolveHefeiNoticeNoRaw } from "../src/adapters/hefei.js";
+import { extractHefeiNoticeNo, extractHefeiParcelNoFromText, resolveHefeiNoticeNoRaw } from "../src/adapters/hefei.js";
 import { mergeNoticeAndResults } from "../src/services/merge-service.js";
 import type { ParsedNoticeRecord, ParsedResultRecord } from "../src/domain/types.js";
 
@@ -60,6 +60,18 @@ describe("Hefei noticeNo separation", () => {
   it("does not fall back to parcelNo when noticeNo is absent", () => {
     expect(resolveHefeiNoticeNoRaw(null, "TC2-2-1号")).toBeNull();
     expect(resolveHefeiNoticeNoRaw(null, "KT1-4-2号")).toBeNull();
+  });
+
+  it("normalizes source-prefixed noticeNo to formal body", () => {
+    expect(resolveHefeiNoticeNoRaw("【合肥】合自然资规公告[2026]12号", null)).toBe("合自然资规公告(2026)12号");
+  });
+
+  it("extracts noticeNo from source title when detail fields are weak", () => {
+    expect(extractHefeiNoticeNo(null, "交易结果公示", "合自然资规公告[2026]12号地块成交公示")).toBe("合自然资规公告(2026)12号");
+  });
+
+  it("extracts parcelNo from title as fallback", () => {
+    expect(extractHefeiParcelNoFromText("关于TC2-2-1号地块成交结果公示")).toBe("TC2-2-1号");
   });
 
   it("routes notice records without formal noticeNo to missing_announcement_no", () => {

@@ -8,6 +8,7 @@ import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
 import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { findHeaderIndex } from "../utils/table-parser.js";
+import { normalizeDistrict, normalizeLandUsage, normalizeNoticeNoCore, normalizeParcelNo, parseTotalStartPriceWan } from "../utils/field-normalizer.js";
 
 const SELECTORS: SiteSelectors = {
   listReady: [".el-table__body tbody tr .title", ".el-table__body tbody tr"],
@@ -53,25 +54,32 @@ function parseRows(rawRows: string[][]): { headers: string[]; rows: string[][] }
 }
 
 export function extractWuhanNoticeNo(detailTitle: string | null | undefined, text: string | null | undefined): string | null {
-  const title = cleanText(detailTitle);
-  const body = cleanText(text);
+  const stripPrefix = (value: string) => value.replace(/^(?:【[^】]+】\s*)+/, "").replace(/^(?:\[[^\]]+\]\s*)+/, "");
+  const title = stripPrefix(cleanText(detailTitle));
+  const body = stripPrefix(cleanText(text));
   return firstNonEmpty(
     title.match(/[^\s，。；;]*告字[（(]?\d{4}年?[）)]?\d+号?/)?.[0],
     body.match(/[^\s，。；;]*告字[（(]?\d{4}年?[）)]?\d+号?/)?.[0],
     title.match(/\d{4}年第?\d+号公告/)?.[0],
-    body.match(/\d{4}年第?\d+号公告/)?.[0]
+    body.match(/\d{4}年第?\d+号公告/)?.[0],
+    normalizeNoticeNoCore(title),
+    normalizeNoticeNoCore(body)
   );
 }
 
-export function extractWuhanDistrict(raw: string | null | undefined): string | null {
-  const value = cleanText(raw);
-  if (!value) {
+export function extractWuhanParcelNoFromText(value: string | null | undefined): string | null {
+  const text = cleanText(value);
+  if (!text) {
     return null;
   }
-  return firstNonEmpty(
-    value.match(/([^，,\s]+?(?:区|县))/)?.[1],
-    null
-  );
+  return normalizeParcelNo(firstNonEmpty(
+    text.match(/([A-Za-z]{1,5}[0-9A-Za-z\-()（）]*(?:\[[^\]]+\])?号)/)?.[1],
+    text.match(/([A-Za-z]{1,5}\d(?:-\d+){1,6}(?:号)?)/)?.[1]
+  ));
+}
+
+export function extractWuhanDistrict(raw: string | null | undefined): string | null {
+  return normalizeDistrict(raw);
 }
 
 class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
@@ -106,7 +114,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
       infoText.match(/发布时间[:：]\s*([0-9年月日\-.\/\s:]+)/)?.[1],
       text.match(/发布时间[:：]\s*([0-9年月日\-.\/\s:]+)/)?.[1]
     ));
-    const noticeNoRaw = extractWuhanNoticeNo(detailTitle, text);
+    const noticeNoRaw = extractWuhanNoticeNo(detailTitle, `${text}\n${context.listItem.title ?? ""}`);
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
     const attachmentsJson = document.attachments.length > 0 ? JSON.stringify(document.attachments) : null;
 
@@ -128,10 +136,12 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
       ));
       const records: ParsedNoticeRecord[] = rows.map((row, rowIndex) => {
         const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
+        const normalizedParcelNo = normalizeParcelNo(parcelNo) ?? extractWuhanParcelNoFromText(detailTitle);
         const districtRaw = districtIdx >= 0 ? row[districtIdx] ?? null : null;
         const areaRaw = areaIdx >= 0 ? row[areaIdx] ?? null : null;
         const areaHa = areaRaw ? parseAreaToHectare(`${areaRaw}平方米`) : null;
-        const startPriceByColumn = parseChineseNumber(startIdx >= 0 ? row[startIdx] : null);
+        const startPriceRaw = startIdx >= 0 ? row[startIdx] : null;
+        const startPriceByColumn = parseTotalStartPriceWan(startPriceRaw, { areaHa });
         const listingModeIndex = row.findIndex((cell) => cell.includes("挂牌") || cell.includes("拍卖"));
         const startPriceByFallback =
           listingModeIndex >= 0
@@ -146,7 +156,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
           siteCode: this.siteCode,
           sourceKey: buildStableSourceKey(this.siteCode, "notice", [
             noticeNoNorm,
-            parcelNo,
+            normalizedParcelNo,
             row.join("|"),
             detailTitle,
             sourceUrl
@@ -158,12 +168,12 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
           noticeTitle: detailTitle,
           noticeNoRaw,
           noticeNoNorm,
-          landUsage: usageIdx >= 0 ? row[usageIdx] ?? null : null,
+          landUsage: normalizeLandUsage(usageIdx >= 0 ? row[usageIdx] ?? null : null),
           areaHa,
           startPriceWan: startPriceByColumn ?? startPriceByFallback,
           noticeDate,
           tradeDate,
-          parcelNo,
+          parcelNo: normalizedParcelNo,
           contentText: text,
           rawHtml: document.rawHtml,
           attachmentsJson,
@@ -199,6 +209,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
 
     const records: ParsedResultRecord[] = rows.map((row, rowIndex) => {
       const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
+      const normalizedParcelNo = normalizeParcelNo(parcelNo) ?? extractWuhanParcelNoFromText(detailTitle);
       const districtRaw = districtIdx >= 0 ? row[districtIdx] ?? null : null;
       const district = extractWuhanDistrict(districtRaw);
       const dealPriceWan = parseChineseNumber(dealIdx >= 0 ? row[dealIdx] : null);
@@ -206,7 +217,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
         siteCode: this.siteCode,
         sourceKey: buildStableSourceKey(this.siteCode, "result", [
           noticeNoNorm,
-          parcelNo,
+          normalizedParcelNo,
           row.join("|"),
           detailTitle,
           sourceUrl
@@ -222,7 +233,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
         winner: winnerIdx >= 0 ? row[winnerIdx] ?? null : null,
         status: dealPriceWan !== null ? "已成交" : null,
         dealDate: normalizeDate(dealDateIdx >= 0 ? row[dealDateIdx] : null),
-        parcelNo,
+        parcelNo: normalizedParcelNo,
         contentText: text,
         rawHtml: document.rawHtml,
         attachmentsJson,

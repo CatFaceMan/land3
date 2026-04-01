@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { extractWuhanDistrict, extractWuhanNoticeNo } from "../src/adapters/wuhan.js";
+import { extractWuhanDistrict, extractWuhanNoticeNo, extractWuhanParcelNoFromText } from "../src/adapters/wuhan.js";
 import { extractZhejiangNoticeNo } from "../src/adapters/zhejiang.js";
 import { extractXianNoticeNo, normalizeXianParcelNo } from "../src/adapters/xian.js";
 import { mergeNoticeAndResults } from "../src/services/merge-service.js";
@@ -14,6 +14,11 @@ describe("Wuhan notice/district extraction", () => {
   it("keeps district at county level", () => {
     expect(extractWuhanDistrict("黄陂区盘龙城经济开发区")).toBe("黄陂区");
   });
+
+  it("extracts noticeNo from source-prefixed title and parcelNo fallback from title", () => {
+    expect(extractWuhanNoticeNo("【武汉】武告字（2026年）1号", "正文")).toBe("武告字（2026年）1号");
+    expect(extractWuhanParcelNoFromText("武汉市关于P(2026)012号地块交易结果公告")).toBe("P(2026)012号");
+  });
 });
 
 describe("Ningbo notice number extraction in zhejiang adapter", () => {
@@ -21,6 +26,7 @@ describe("Ningbo notice number extraction in zhejiang adapter", () => {
     expect(extractZhejiangNoticeNo("甬土告〔2026〕1号")).toBe("甬土告〔2026〕1号");
     expect(extractZhejiangNoticeNo("甬土资告〔2026〕2号")).toBe("甬土资告〔2026〕2号");
     expect(extractZhejiangNoticeNo("甬自然资规出告〔2026〕3号")).toBe("甬自然资规出告〔2026〕3号");
+    expect(extractZhejiangNoticeNo("甬自然资规告字〔2026〕5号")).toBe("甬自然资规告字〔2026〕5号");
     expect(extractZhejiangNoticeNo("象自然资规工出告字〔2026〕4号")).toBe("象自然资规工出告字〔2026〕4号");
   });
 });

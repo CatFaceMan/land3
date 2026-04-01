@@ -8,6 +8,7 @@ import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
 import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { normalizeHeader, findHeaderIndex } from "../utils/table-parser.js";
+import { normalizeDistrict, normalizeLandUsage, normalizeNoticeNoCore, normalizeParcelNo } from "../utils/field-normalizer.js";
 
 const SELECTORS: SiteSelectors = {
   listReady: ["ul.ewb-right-item", ".ewb-right-item", "body"],
@@ -37,16 +38,7 @@ const config: GenericSiteConfig = {
 };
 
 function extractDistrictToken(value: string | null | undefined): string | null {
-  const text = cleanText(value);
-  if (!text) {
-    return null;
-  }
-  const region = firstNonEmpty(
-    text.match(/(.+?区)/)?.[1],
-    text.match(/(.+?县)/)?.[1],
-    text.match(/(.+?市)/)?.[1]
-  );
-  return region ? cleanText(region) : null;
+  return normalizeDistrict(value);
 }
 
 function resolveDistrict(rawDistrict: string | null | undefined, parcelNo: string | null | undefined): string | null {
@@ -89,7 +81,41 @@ function parseFirstNumber(raw: string | null | undefined): number | null {
 }
 
 export function resolveHefeiNoticeNoRaw(noticeNoRaw: string | null, _parcelNo: string | null | undefined): string | null {
-  return noticeNoRaw;
+  return normalizeNoticeNoCore(noticeNoRaw);
+}
+
+export function extractHefeiNoticeNo(
+  title: string | null | undefined,
+  text: string | null | undefined,
+  sourceTitle: string | null | undefined
+): string | null {
+  const candidates = [title, text, sourceTitle];
+  for (const candidate of candidates) {
+    const normalized = cleanText(candidate);
+    if (!normalized) {
+      continue;
+    }
+    const matched = firstNonEmpty(
+      normalized.match(/[^\s（）()]{0,12}自然资规(?:公告|告字)[[（\[]\d{4}[)）\]]\d+号?/)?.[0],
+      normalized.match(/\d{4}年第?\d+号公告/)?.[0],
+      normalizeNoticeNoCore(normalized)
+    );
+    if (matched) {
+      return resolveHefeiNoticeNoRaw(matched, null);
+    }
+  }
+  return null;
+}
+
+export function extractHefeiParcelNoFromText(value: string | null | undefined): string | null {
+  const text = cleanText(value);
+  if (!text) {
+    return null;
+  }
+  return normalizeParcelNo(firstNonEmpty(
+    text.match(/([A-Za-z]{1,5}[0-9A-Za-z\-()（）]*(?:\[[^\]]+\])?号)/)?.[1],
+    text.match(/([A-Za-z]{1,5}\d(?:-\d+){1,6}(?:号)?)/)?.[1]
+  ));
 }
 
 class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
@@ -118,11 +144,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const text = liveText || document.contentText;
     const title = cleanText(await page.locator("h1, .ewb-article-title").first().textContent().catch(() => null)) || document.title || context.listItem.title;
     const sourceUrl = page.url();
-    const noticeNoRaw = firstNonEmpty(
-      title.match(/[^\s（）()]{0,12}自然资规公告[[（\[]\d{4}[)）\]]\d+号/)?.[0],
-      text.match(/[^\s（）()]{0,12}自然资规公告[[（\[]\d{4}[)）\]]\d+号/)?.[0],
-      title.match(/\d{4}年第?\d+号公告/)?.[0]
-    );
+    const noticeNoRaw = extractHefeiNoticeNo(title, text, context.listItem.title);
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
     const noticeDate = normalizeDate(firstNonEmpty(
       text.match(/发布时间[:：]\s*([0-9\-\/年.\s月日]+)/)?.[1]
@@ -149,7 +171,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
         text.match(/挂牌日期为[^，。；;]*至\s*([0-9年月日时分:\s]+)/)?.[1]
       ));
       const records: ParsedNoticeRecord[] = rows.map((row) => {
-        const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
+        const parcelNo = normalizeParcelNo(parcelIdx >= 0 ? row[parcelIdx] ?? null : null) ?? extractHefeiParcelNoFromText(title);
         const areaMu = areaIdx >= 0 ? parseFirstNumber(row[areaIdx]) ?? Number.NaN : Number.NaN;
         const unitPriceWanPerMu = startPriceIdx >= 0 ? parseFirstNumber(row[startPriceIdx]) ?? Number.NaN : Number.NaN;
         const startPriceWan = Number.isFinite(unitPriceWanPerMu) && Number.isFinite(areaMu) ? Number((unitPriceWanPerMu * areaMu).toFixed(4)) : parseChineseNumber(startTotalIdx >= 0 ? row[startTotalIdx] : null);
@@ -170,7 +192,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
           noticeTitle: title,
           noticeNoRaw: resolveHefeiNoticeNoRaw(noticeNoRaw, parcelNo),
           noticeNoNorm,
-          landUsage: usageIdx >= 0 ? row[usageIdx] ?? null : null,
+          landUsage: normalizeLandUsage(usageIdx >= 0 ? row[usageIdx] ?? null : null),
           areaHa: Number.isFinite(areaMu) ? parseAreaToHectare(`${areaMu}亩`) : null,
           startPriceWan,
           noticeDate,
@@ -186,7 +208,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
     }
 
     const records: ParsedResultRecord[] = rows.map((row) => {
-      const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
+      const parcelNo = normalizeParcelNo(parcelIdx >= 0 ? row[parcelIdx] ?? null : null) ?? extractHefeiParcelNoFromText(title);
       const districtRaw = districtIdx >= 0 ? row[districtIdx] ?? null : null;
       const dealDate = normalizeDate(firstNonEmpty(
         dealDateIdx >= 0 ? row[dealDateIdx] : null,

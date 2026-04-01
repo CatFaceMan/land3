@@ -8,6 +8,7 @@ import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
 import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { normalizeHeader } from "../utils/table-parser.js";
+import { normalizeDistrict, normalizeLandUsage, normalizeNoticeNoCore, normalizeParcelNo } from "../utils/field-normalizer.js";
 
 const SELECTORS: SiteSelectors = {
   listReady: ["#info-list .ewb-list-node", ".ewb-right #info-list > li.ewb-list-node"],
@@ -52,7 +53,10 @@ function safeNormalizeDate(value: string | null | undefined): string | null {
 }
 
 export function stripXianSourcePrefix(value: string | null | undefined): string {
-  return cleanText(value).replace(/^(?:【[^】]+】\s*)+/, "");
+  return cleanText(value)
+    .replace(/^(?:【[^】]+】\s*)+/, "")
+    .replace(/^(?:\[[^\]]+\]\s*)+/, "")
+    .replace(/^(?:公告期|信息来源|来源)\s*[:：]?\s*/, "");
 }
 
 export function extractXianNoticeNo(title: string | null | undefined, text: string | null | undefined): string | null {
@@ -62,16 +66,14 @@ export function extractXianNoticeNo(title: string | null | undefined, text: stri
     cleanBody.match(/[^\s，。；;]*土出告字〔\d{4}〕\d+号(?:-\d+)?/)?.[0],
     cleanTitle.match(/[^\s，。；;]*土出告字〔\d{4}〕\d+号(?:-\d+)?/)?.[0],
     cleanTitle.match(/[^\s，。；;]*土出告字\[\d{4}\]\d+号(?:-\d+)?/)?.[0],
-    cleanBody.match(/[^\s，。；;]*土出告字\[\d{4}\]\d+号(?:-\d+)?/)?.[0]
+    cleanBody.match(/[^\s，。；;]*土出告字\[\d{4}\]\d+号(?:-\d+)?/)?.[0],
+    normalizeNoticeNoCore(cleanTitle),
+    normalizeNoticeNoCore(cleanBody)
   );
 }
 
 export function normalizeXianParcelNo(value: string | null | undefined): string | null {
-  const text = cleanText(value);
-  if (!text) {
-    return null;
-  }
-  return text.replace(/\s+/g, "").replace(/\s*\[\s*/g, "[").replace(/\s*\]\s*/g, "]");
+  return normalizeParcelNo(value);
 }
 
 function parseRows(rawRows: string[][], marker: string): { headers: string[]; rows: string[][] } {
@@ -104,6 +106,10 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const sourceUrl = page.url();
     const noticeNoRaw = extractXianNoticeNo(title, text);
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
+    const detailDistrict = firstNonEmpty(
+      normalizeDistrict(text.match(/([\u4e00-\u9fa5]{2,20}(?:新区|开发区|区|县|市))(?:国有建设用地|挂牌|拍卖|出让)/)?.[1]),
+      normalizeDistrict(stripXianSourcePrefix(title))
+    );
     const rawRows = await page.locator("table tr").evaluateAll((nodes) =>
       nodes.map((tr) => Array.from(tr.querySelectorAll("th,td")).map((td) => (td.textContent || "").replace(/\s+/g, " ").trim()))
     );
@@ -150,11 +156,11 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
-        district: row[2]?.split("、")[0] ?? null,
+        district: firstNonEmpty(normalizeDistrict(row[2]?.split("、")[0] ?? null), detailDistrict),
         noticeTitle: title,
         noticeNoRaw,
         noticeNoNorm,
-        landUsage: row[3] ?? null,
+        landUsage: normalizeLandUsage(row[3] ?? null),
         areaHa: parseAreaToHectare(row[4] ? `${row[4]}平方米` : null),
         startPriceWan: parseChineseNumber(row[10] ?? row[8] ?? null),
         noticeDate,
@@ -205,7 +211,7 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
       sourceUrl,
       sourceTitle: context.listItem.title,
       city: this.cityName,
-      district: null,
+      district: detailDistrict,
       resultTitle,
       noticeNoRaw,
       noticeNoNorm,

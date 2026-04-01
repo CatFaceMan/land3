@@ -10,6 +10,7 @@ import { normalizeNoticeNo } from "../utils/notice-no-normalizer.js";
 import { parseAreaToHectare, parseChineseNumber } from "../utils/number.js";
 import { buildStableSourceKey } from "../utils/source-key.js";
 import { findHeaderIndex } from "../utils/table-parser.js";
+import { normalizeDistrict, normalizeNoticeNoCore, normalizeParcelNo } from "../utils/field-normalizer.js";
 
 const SELECTORS: SiteSelectors = {
   listReady: ["section .source-info-item > a:visible", ".source-info-item > a:visible", "a.expand-card-wrapper.d-block:visible"],
@@ -190,12 +191,15 @@ export type ZhejiangNoticeFieldOverrides = {
 };
 
 export function extractZhejiangNoticeNo(value: string | null | undefined): string | null {
-  const text = cleanText(value);
+  const text = cleanText(value)
+    .replace(/^(?:【[^】]+】\s*)+/, "")
+    .replace(/^(?:\[[^\]]+\]\s*)+/, "")
+    .replace(/^(?:公告期|国有建设用地使用权挂牌出让公告|国有建设用地使用权拍卖出让公告)\s*/g, "");
   if (!text) {
     return null;
   }
   const ningboStrictPattern =
-    /((?:甬土告|甬土资告|甬自然资规出告|象自然资规工出告字)[\[({〔【（]?\d{4}[\])}〕】）]?(?:[A-Za-z]+\d+|\d+)(?:-\d+)?号?)/gi;
+    /((?:甬土告|甬土资告|甬自然资规出告|甬自然资规告字|象自然资规工出告字)[\[({〔【（]?\d{4}[\])}〕】）]?(?:[A-Za-z]+\d+|\d+)(?:-\d+)?号?)/gi;
   const strictCandidates = Array.from(text.matchAll(ningboStrictPattern))
     .map((item) => cleanText(item[1]))
     .filter((item) => item.length > 0);
@@ -235,7 +239,11 @@ export function extractZhejiangNoticeNo(value: string | null | undefined): strin
     return value;
   };
   source.sort((a, b) => score(b) - score(a) || a.length - b.length);
-  return source[0] ?? null;
+  const best = source[0] ?? null;
+  if (!best) {
+    return null;
+  }
+  return cleanText(best.replace(/^(?:.*?)([\u4e00-\u9fa5A-Za-z]{0,20}告(?:字)?[\[({〔【（]?\d{4}[\])}〕】）]?(?:[A-Za-z]+\d+|\d+)(?:-\d+)?号?)$/, "$1"));
 }
 
 function extractResourceId(url: string | null | undefined): string | null {
@@ -401,20 +409,6 @@ function extractAnnouncementHeaderLines(announcementText: string): { titleLine: 
 }
 
 function normalizeDistrictValue(value: string | null | undefined): string | null {
-  const cleanDistrictToken = (token: string): string | null => {
-    let candidate = cleanText(token)
-      .replace(/^位于/, "")
-      .replace(/^位于杭州市/, "")
-      .replace(/^位于宁波市/, "");
-    candidate = candidate.replace(/^[年月日时分秒号字第]+/, "");
-    if (candidate.includes("用地")) {
-      candidate = cleanText(candidate.split("用地").pop() ?? candidate);
-    }
-    if (candidate.includes("市") && /区$/.test(candidate)) {
-      candidate = candidate.slice(candidate.lastIndexOf("市") + 1);
-    }
-    return candidate || null;
-  };
   const text = cleanText(value);
   if (!text) {
     return null;
@@ -427,19 +421,13 @@ function normalizeDistrictValue(value: string | null | undefined): string | null
     const matches = Array.from(trimmed.matchAll(DISTRICT_TOKEN_PATTERN))
       .map((item) => cleanText(item[1]))
       .filter((item) => item.length > 0);
-    return matches.length > 0 ? cleanDistrictToken(matches[matches.length - 1]) : null;
+    return matches.length > 0 ? normalizeDistrict(matches[matches.length - 1]) : null;
   }
-  const generalMatches = Array.from(text.matchAll(DISTRICT_TOKEN_PATTERN))
-    .map((item) => cleanText(item[1]))
-    .filter((item) => item.length > 0);
-  if (generalMatches.length > 0) {
-    return cleanDistrictToken(generalMatches[generalMatches.length - 1]);
-  }
-  return text;
+  return normalizeDistrict(text);
 }
 
 function normalizeNoticeNoForDb(value: string | null | undefined): string | null {
-  const text = cleanText(value);
+  const text = normalizeNoticeNoCore(value) ?? cleanText(value);
   if (!text) {
     return null;
   }
@@ -498,7 +486,7 @@ function normalizeZhejiangLabel(value: string | null | undefined): string {
 }
 
 function normalizeZhejiangParcelNo(value: string | null | undefined): string {
-  return (normalizeNoticeNo(value) ?? "").replace(/\s+/g, "").toUpperCase();
+  return (normalizeParcelNo(value) ?? normalizeNoticeNo(value) ?? "").replace(/\s+/g, "").toUpperCase();
 }
 
 function firstFiniteNumber(...values: Array<number | null | undefined>): number | null {
@@ -636,15 +624,7 @@ function findZhejiangTableRowByParcel(table: ZhejiangHtmlTable | null, parcelNo:
 }
 
 function extractDistrictFromLocation(location: string | null | undefined): string | null {
-  const text = cleanText(location);
-  if (!text) {
-    return null;
-  }
-  return firstNonEmpty(
-    text.match(/^([^（(，,\s]+区)/)?.[1],
-    text.match(/^([^（(，,\s]+县)/)?.[1],
-    text.match(/^([^（(，,\s]+市)/)?.[1]
-  );
+  return normalizeDistrict(location);
 }
 
 function extractZhejiangAttachmentFileNames($: CheerioAPI): string[] {
@@ -710,12 +690,12 @@ export function extractZhejiangNoticeFieldOverrides(args: {
 
   return {
     parcelNo: targetParcelNo,
-    district: firstNonEmpty(
+    district: normalizeDistrictValue(firstNonEmpty(
       canUseDetailFallback ? readZhejiangDescriptionField(descriptionFields, ["所属行政区"]) : null,
       extractDistrictFromLocation(getZhejiangTableCell(overviewTable, overviewRow, ["地块坐落"])),
       extractZhejiangDistrict(pageText, summary),
       extractZhejiangDistrictFromTitle(announcementText)
-    ),
+    )),
     landUsage: landUsage ?? null,
     areaHa: bestAreaHa,
     startPriceWan,
@@ -728,8 +708,7 @@ export function extractZhejiangNoticeFieldOverrides(args: {
     noticeNoRaw: firstNonEmpty(
       extractZhejiangNoticeNo(announcementText),
       extractZhejiangNoticeNo(attachmentFileNames.join(" ")),
-      extractZhejiangNoticeNo(pageText),
-      cleanText(targetParcelNo) || null
+      extractZhejiangNoticeNo(pageText)
     )
   };
 }
@@ -971,7 +950,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       text.match(/地块编号（宗地编码）：\s*([^地]+?)\s*地块名称：/)?.[1],
       summary.match(/#([^#|]+?)(?:保证金到账截止时间|起始价|挂牌时间|拍卖时间|拍卖开始|$)/)?.[1]
     );
-    const parcelNo = parcelNoRaw;
+    const parcelNo = normalizeParcelNo(parcelNoRaw);
     const district = firstNonEmpty(
       isHangzhouLikeSite(this.siteCode) && bizType === "notice" ? hangzhouStrictDistrict : null,
       normalizeDistrictValue(noticeOverrides.district),
@@ -1009,8 +988,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       headerLines.subTitleLine,
       noticeOverrides.noticeNoRaw,
       extractZhejiangNoticeNo(announcementText),
-      extractZhejiangNoticeNo(text),
-      cleanText(parcelNo) || null
+      extractZhejiangNoticeNo(text)
     )));
     const noticeNoRaw = this.siteCode === "hangzhou" && bizType === "result"
       ? normalizeNoticeNoBySite(

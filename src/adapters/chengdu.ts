@@ -9,6 +9,7 @@ import { buildStableSourceKey } from "../utils/source-key.js";
 import { cleanText, firstNonEmpty } from "../utils/text.js";
 import { clickFirstVisible } from "../utils/browser-utils.js";
 import { normalizeHeader, findHeaderIndex } from "../utils/table-parser.js";
+import { normalizeDistrict, normalizeLandUsage, normalizeParcelNo, parseTotalStartPriceWan } from "../utils/field-normalizer.js";
 
 const SELECTORS: SiteSelectors = {
   listReady: [".right-list", ".list-content .list-row", "body"],
@@ -105,16 +106,6 @@ function parseChengduAreaHa(raw: string | null): number | null {
   return parseAreaToHectare(raw);
 }
 
-function parseChengduStartPriceWan(raw: string | null, areaRaw: string | null): number | null {
-  if (!raw) {
-    return null;
-  }
-  if (/亩/.test(raw)) {
-    return parsePriceByMu(raw, areaRaw);
-  }
-  return parseChineseNumber(raw);
-}
-
 function extractFirstNumber(value: string | null | undefined): number | null {
   if (!value) {
     return null;
@@ -162,17 +153,7 @@ function parseChengduTradeDate(raw: string | null): string | null {
 }
 
 function parseChengduDistrict(raw: string | null): string | null {
-  if (!raw) {
-    return null;
-  }
-  const normalized = cleanText(raw);
-  const districtOnly = normalized.match(/([\u4e00-\u9fa5]{2,20}?区)/)?.[1];
-  if (districtOnly) {
-    return districtOnly;
-  }
-  const firstSegment = cleanText(normalized.split(/[，,]/)[0]);
-  const match = firstSegment.match(/^(.+?(?:新区|区|市|县))/);
-  return cleanText(match?.[1] ?? firstSegment) || null;
+  return normalizeDistrict(raw);
 }
 
 function parseResultDateByTitle(title: string): string | null {
@@ -301,12 +282,19 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
       return rows.map((rawRow, rowIndex) => {
         const { row, tradeDateText } = normalizeNoticeRow(rawRow, previousTradeDate);
         previousTradeDate = tradeDateText;
-        const parcelNo = row[1] ?? null;
+        const parcelNo = normalizeParcelNo(row[1] ?? null);
         const areaRaw = row[3] ?? null;
         const usageRaw = row[4] ?? null;
         const startPriceRaw = row[5] ?? null;
         const planningText = row.slice(8).join(" ");
         const tradeDateRaw = tradeDateText ?? row[7] ?? null;
+        const parsedAreaHa = parseChengduAreaHa(areaRaw);
+        const parsedAreaMu = areaRaw?.match(/([0-9]+(?:\.[0-9]+)?)\s*亩/)?.[1];
+        const areaMu = parsedAreaMu ? Number(parsedAreaMu) : parsedAreaHa && parsedAreaHa > 0 ? parsedAreaHa * 15 : null;
+        const startPriceWan = parseFloorPriceTotalWan(startPriceRaw, areaRaw, planningText) ?? parseTotalStartPriceWan(startPriceRaw, {
+          areaHa: parsedAreaHa,
+          areaMu
+        });
         return {
           siteCode: this.siteCode,
           sourceKey: buildStableSourceKey(this.siteCode, "notice", [
@@ -323,9 +311,9 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
           noticeTitle: title,
           noticeNoRaw,
           noticeNoNorm,
-          landUsage: usageRaw,
-          areaHa: parseChengduAreaHa(areaRaw),
-          startPriceWan: parseFloorPriceTotalWan(startPriceRaw, areaRaw, planningText) ?? parseChengduStartPriceWan(startPriceRaw, areaRaw),
+          landUsage: normalizeLandUsage(usageRaw),
+          areaHa: parsedAreaHa,
+          startPriceWan,
           noticeDate,
           tradeDate: parseChengduTradeDate(tradeDateRaw),
           parcelNo,
@@ -348,7 +336,7 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const dealDateIdx = findHeaderIndex(headers, ["成交时间"]);
 
     return rows.map((row) => {
-      const parcelNo = parcelNoIdx >= 0 ? row[parcelNoIdx] ?? null : row[1] ?? null;
+      const parcelNo = normalizeParcelNo(parcelNoIdx >= 0 ? row[parcelNoIdx] ?? null : row[1] ?? null);
       const locationRaw = locationIdx >= 0 ? row[locationIdx] ?? null : row[2] ?? null;
       const areaRaw = areaIdx >= 0 ? row[areaIdx] ?? null : row[3] ?? null;
       const dealPriceRaw = dealPriceIdx >= 0 ? row[dealPriceIdx] ?? null : row[5] ?? null;
@@ -371,7 +359,7 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
         resultTitle: title,
         noticeNoRaw: resultNoticeNoRaw,
         noticeNoNorm,
-        dealPriceWan: /平方米/.test(dealPriceRaw ?? "") ? null : parsePriceByMu(dealPriceRaw, areaRaw) ?? parseChineseNumber(dealPriceRaw),
+        dealPriceWan: /平方米|楼面地价/.test(dealPriceRaw ?? "") ? null : parsePriceByMu(dealPriceRaw, areaRaw) ?? parseChineseNumber(dealPriceRaw),
         winner,
         status: winner ? "已成交" : null,
         dealDate: normalizeDate(dealDateRaw) ?? parseResultDateByTitle(title) ?? metaPubDate,
