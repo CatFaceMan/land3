@@ -88,6 +88,10 @@ function parseFirstNumber(raw: string | null | undefined): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+export function resolveHefeiNoticeNoRaw(noticeNoRaw: string | null, _parcelNo: string | null | undefined): string | null {
+  return noticeNoRaw;
+}
+
 class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
   public constructor() {
     super(config);
@@ -164,7 +168,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
           city: this.cityName,
           district: resolveDistrict(districtRaw, parcelNo),
           noticeTitle: title,
-          noticeNoRaw: noticeNoRaw ?? parcelNo,
+          noticeNoRaw: resolveHefeiNoticeNoRaw(noticeNoRaw, parcelNo),
           noticeNoNorm,
           landUsage: usageIdx >= 0 ? row[usageIdx] ?? null : null,
           areaHa: Number.isFinite(areaMu) ? parseAreaToHectare(`${areaMu}亩`) : null,
@@ -208,7 +212,7 @@ class HefeiSiteAdapter extends ConfiguredHtmlSiteAdapter {
         city: this.cityName,
         district: resolveDistrict(districtRaw, parcelNo),
         resultTitle: title,
-        noticeNoRaw: noticeNoRaw ?? parcelNo,
+        noticeNoRaw: resolveHefeiNoticeNoRaw(noticeNoRaw, parcelNo),
         noticeNoNorm,
         dealPriceWan,
         winner,

@@ -183,6 +183,13 @@ function parseResultDateByTitle(title: string): string | null {
   return normalizeDate(dateCandidates[dateCandidates.length - 1]);
 }
 
+export function resolveChengduResultNoticeNo(_resultTitle: string | null | undefined, _parcelNo: string | null | undefined): null {
+  // 成都 result 页没有稳定公告号：
+  // 1) 标题日期区间不能映射为公告号
+  // 2) parcelNo 也不能回填为公告号
+  return null;
+}
+
 function extractTrailingBracketContent(title: string): string | null {
   const text = cleanText(title);
   if (!text) {
@@ -330,7 +337,7 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
       });
     }
 
-    const noticeNoRaw: string | null = null;
+    const noticeNoRaw = resolveChengduResultNoticeNo(title, null);
     const noticeNoNorm: string | null = null;
     const { headers, rows } = parseResultRows(rawRows);
     const parcelNoIdx = findHeaderIndex(headers, ["宗地编号"]);
@@ -347,6 +354,7 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
       const dealPriceRaw = dealPriceIdx >= 0 ? row[dealPriceIdx] ?? null : row[5] ?? null;
       const winner = winnerIdx >= 0 ? row[winnerIdx] ?? null : row[6] ?? null;
       const dealDateRaw = dealDateIdx >= 0 ? row[dealDateIdx] ?? null : null;
+      const resultNoticeNoRaw = resolveChengduResultNoticeNo(title, parcelNo);
       return {
         siteCode: this.siteCode,
         sourceKey: buildStableSourceKey(this.siteCode, "result", [
@@ -361,7 +369,7 @@ class ChengduSiteAdapter extends ConfiguredHtmlSiteAdapter {
         city: this.cityName,
         district: parseChengduDistrict(locationRaw),
         resultTitle: title,
-        noticeNoRaw,
+        noticeNoRaw: resultNoticeNoRaw,
         noticeNoNorm,
         dealPriceWan: /平方米/.test(dealPriceRaw ?? "") ? null : parsePriceByMu(dealPriceRaw, areaRaw) ?? parseChineseNumber(dealPriceRaw),
         winner,
