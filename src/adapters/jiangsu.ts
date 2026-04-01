@@ -154,6 +154,12 @@ const JIANGSU_REGION_ALIASES: Record<string, string> = {
   金坛市: "金坛区"
 };
 
+const JIANGSU_SITE_REGION_PREFIX: Partial<Record<SiteCode, string>> = {
+  suzhou: "3205",
+  wuxi: "3202",
+  changzhou: "3204"
+};
+
 export function normalizeJiangsuEpochDate(value: number | string | null | undefined): string | null {
   if (typeof value === "number" && Number.isFinite(value)) {
     return JIANGSU_DATE_FORMATTER.format(new Date(value));
@@ -213,6 +219,18 @@ export function resolveJiangsuWinner(value: string | null | undefined): string |
     return normalized;
   }
   return companies.find((item) => item.includes("商业管理")) ?? companies[0];
+}
+
+export function isJiangsuRegionCodeAllowed(siteCode: SiteCode, xzqDm: string | null | undefined): boolean {
+  const expectedPrefix = JIANGSU_SITE_REGION_PREFIX[siteCode];
+  if (!expectedPrefix) {
+    return true;
+  }
+  const normalized = cleanText(xzqDm);
+  if (!normalized) {
+    return false;
+  }
+  return normalized.startsWith(expectedPrefix);
 }
 
 function pickField(fields: Record<string, string>, keys: string[]): string | null {
@@ -305,7 +323,9 @@ export class JiangsuBaseAdapter implements SiteAdapter {
 
     if (bizType === "result") {
       const parsed = await this.parseL2Detail(page, bizType, context, 0);
-      records.push(parsed);
+      if (parsed) {
+        records.push(parsed);
+      }
       return records as ParsedNoticeRecord[] | ParsedResultRecord[];
     }
 
@@ -351,7 +371,10 @@ export class JiangsuBaseAdapter implements SiteAdapter {
       const detailPage = await page.context().newPage();
       await detailPage.goto(`http://www.landjs.com/tAfficheParcel/detail/remise/${guid}`, { waitUntil: "domcontentloaded", timeout: 60_000 });
       const parcelNo = cleanText(parcelList[index].dkBh) || cleanText(parcelList[index].parcelNo);
-      records.push(await this.parseL2Detail(detailPage, bizType, context, index, parcelNo ? noticeOverridesByParcel.get(parcelNo) : undefined));
+      const parsed = await this.parseL2Detail(detailPage, bizType, context, index, parcelNo ? noticeOverridesByParcel.get(parcelNo) : undefined);
+      if (parsed) {
+        records.push(parsed);
+      }
       await detailPage.close().catch(() => undefined);
       await page.bringToFront().catch(() => undefined);
     }
@@ -641,7 +664,7 @@ export class JiangsuBaseAdapter implements SiteAdapter {
     context: ParseDetailContext,
     subIndex: number,
     overrides?: JiangsuNoticeOverrides
-  ): Promise<ParsedNoticeRecord | ParsedResultRecord> {
+  ): Promise<ParsedNoticeRecord | ParsedResultRecord | null> {
     const document = await extractDocument(page, SELECTORS);
     const payload = await this.fetchParcelInfo(page, bizType);
     const sourceUrl = page.url();
@@ -650,10 +673,17 @@ export class JiangsuBaseAdapter implements SiteAdapter {
     if (bizType === "notice") {
       const affiche = payload.affiche ?? {};
       const parcel = payload.tAfficheParcel ?? {};
+      const detailRegionCode = cleanText(parcel.xzqDm) || cleanText(affiche.xzqDm) || null;
+      if (!isJiangsuRegionCodeAllowed(this.siteCode, detailRegionCode)) {
+        console.warn(
+          `[jiangsu-site-guard] skip notice record: siteCode=${this.siteCode}, sourceUrl=${sourceUrl}, xzqDm=${detailRegionCode ?? "null"}`
+        );
+        return null;
+      }
       const noticeNoRaw = overrides?.noticeNoRaw ?? cleanText(parcel.afficheNo) ?? cleanText(affiche.afficheNo) ?? null;
       const parcelNo = cleanText(parcel.dkBh) || cleanText(parcel.parcelNo) || null;
-      const landUsage = resolveJiangsuLandUsage(parcel.landUse, parcel.tdYt, cleanText(parcel.xzqDm) || cleanText(affiche.xzqDm));
-      const region = await this.resolveRegionInfo(page, cleanText(parcel.xzqDm) || cleanText(affiche.xzqDm) || null);
+      const landUsage = resolveJiangsuLandUsage(parcel.landUse, parcel.tdYt, detailRegionCode);
+      const region = await this.resolveRegionInfo(page, detailRegionCode);
       const sourceKey = buildStableSourceKey(this.siteCode, "notice", [
         normalizeNoticeNo(noticeNoRaw),
         parcelNo,
@@ -689,10 +719,17 @@ export class JiangsuBaseAdapter implements SiteAdapter {
     } else {
       const bargain = payload.tBargainParcel ?? {};
       const affiche = payload.affiche ?? {};
+      const detailRegionCode = cleanText(bargain.xzqDm) || cleanText(affiche.xzqDm) || null;
+      if (!isJiangsuRegionCodeAllowed(this.siteCode, detailRegionCode)) {
+        console.warn(
+          `[jiangsu-site-guard] skip result record: siteCode=${this.siteCode}, sourceUrl=${sourceUrl}, xzqDm=${detailRegionCode ?? "null"}`
+        );
+        return null;
+      }
       const noticeNoRaw = cleanText(bargain.afficheNo) || null;
       const parcelNo = cleanText(bargain.dkBh) || cleanText(bargain.parcelNo) || null;
-      const landUsage = resolveJiangsuLandUsage(bargain.landUse, bargain.tdYt, cleanText(bargain.xzqDm));
-      const region = await this.resolveRegionInfo(page, cleanText(bargain.xzqDm));
+      const landUsage = resolveJiangsuLandUsage(bargain.landUse, bargain.tdYt, detailRegionCode);
+      const region = await this.resolveRegionInfo(page, detailRegionCode);
       const sourceKey = buildStableSourceKey(this.siteCode, "result", [
         normalizeNoticeNo(noticeNoRaw),
         parcelNo,

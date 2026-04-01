@@ -6,7 +6,8 @@ import {
   extractHangzhouDistrictFromAnnouncementText,
   extractHangzhouParcelNoFromAnnouncementSubTitle,
   extractZhejiangNoticeFieldOverrides,
-  extractZhejiangNoticeNo
+  extractZhejiangNoticeNo,
+  resolveHangzhouResultNoticeNoWithRetry
 } from "../src/adapters/zhejiang.js";
 
 const fixturePath = resolve(process.cwd(), "tests/fixtures/zhejiang-hangzhou-notice.html");
@@ -64,5 +65,31 @@ describe("Hangzhou announcement line extraction", () => {
   it("extracts parcel_no from the line right below the announcement title", () => {
     expect(extractHangzhouParcelNoFromAnnouncementSubTitle("建告字〔2026〕7号")).toBe("建告字〔2026〕7号");
     expect(extractHangzhouParcelNoFromAnnouncementSubTitle("杭规划资源告[2026]R004号")).toBe("杭规划资源告[2026]R004号");
+  });
+});
+
+describe("Hangzhou result noticeNo fallback guard", () => {
+  it("retries extraction for empty/degraded noticeNo and keeps formal announcement number", () => {
+    expect(
+      resolveHangzhouResultNoticeNoWithRetry(
+        null,
+        "杭州市国有建设用地使用权挂牌出让公告 杭规划资源告[2026]R004号",
+        ["附件A.pdf"],
+        ""
+      )
+    ).toBe("杭规划资源告[2026]R004号");
+
+    expect(
+      resolveHangzhouResultNoticeNoWithRetry(
+        "R004号",
+        "",
+        ["杭规划资源告[2026]R004号.pdf"],
+        ""
+      )
+    ).toBe("杭规划资源告[2026]R004号");
+  });
+
+  it("returns null when no formal announcement number can be recovered", () => {
+    expect(resolveHangzhouResultNoticeNoWithRetry("杭政储出[2026]12号", "", [], "地块编号：杭政储出[2026]12号")).toBeNull();
   });
 });

@@ -461,6 +461,32 @@ function normalizeNoticeNoBySite(siteCode: SiteCode, noticeNoRaw: string | null)
   return noticeNoRaw;
 }
 
+function isFormalZhejiangNoticeNo(value: string | null | undefined): boolean {
+  const normalized = cleanText(value);
+  if (!normalized) {
+    return false;
+  }
+  return /告(?:字)?[\[({〔【（]?\d{4}/.test(normalized) && /号$/.test(normalized);
+}
+
+export function resolveHangzhouResultNoticeNoWithRetry(
+  noticeNoRaw: string | null | undefined,
+  announcementText: string | null | undefined,
+  attachmentFileNames: string[] | null | undefined,
+  pageText: string | null | undefined
+): string | null {
+  const current = cleanText(noticeNoRaw);
+  if (isFormalZhejiangNoticeNo(current)) {
+    return current;
+  }
+  const retried = firstNonEmpty(
+    extractZhejiangNoticeNo(announcementText),
+    extractZhejiangNoticeNo((attachmentFileNames ?? []).join(" ")),
+    extractZhejiangNoticeNo(pageText)
+  );
+  return isFormalZhejiangNoticeNo(retried) ? retried : null;
+}
+
 function isHangzhouLikeSite(siteCode: SiteCode): boolean {
   return siteCode === "hangzhou" || siteCode === "ningbo";
 }
@@ -909,6 +935,7 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       nodes.map((n) => (n.textContent || "").replace(/\s+/g, " ").trim())
     ).catch(() => [] as string[]);
     const html$ = load(liveHtml);
+    const attachmentFileNames = extractZhejiangAttachmentFileNames(html$);
     const descriptionFields = extractZhejiangDescriptionFields(html$);
     const hangzhouStrictDistrict = normalizeDistrictValue(descriptionFields["所属行政区"] ?? null);
     const hangzhouStrictPlotNo = cleanText(descriptionFields["地块编号宗地编码"] ?? "");
@@ -985,7 +1012,14 @@ class ZhejiangSiteAdapter extends ConfiguredHtmlSiteAdapter {
       extractZhejiangNoticeNo(text),
       cleanText(parcelNo) || null
     )));
-    const noticeNoRaw = noticeNoRawRaw;
+    const noticeNoRaw = this.siteCode === "hangzhou" && bizType === "result"
+      ? normalizeNoticeNoBySite(
+          this.siteCode,
+          normalizeNoticeNoForDb(
+            resolveHangzhouResultNoticeNoWithRetry(noticeNoRawRaw, announcementText, attachmentFileNames, text)
+          )
+        )
+      : noticeNoRawRaw;
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
     const attachmentsJson = attachments.length > 0 ? JSON.stringify(attachments) : null;
     const sourceKey = buildStableSourceKey(this.siteCode, bizType, [noticeNoNorm, parcelNo, sourceUrl]);
