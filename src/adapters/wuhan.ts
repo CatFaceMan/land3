@@ -52,6 +52,28 @@ function parseRows(rawRows: string[][]): { headers: string[]; rows: string[][] }
   return { headers, rows };
 }
 
+export function extractWuhanNoticeNo(detailTitle: string | null | undefined, text: string | null | undefined): string | null {
+  const title = cleanText(detailTitle);
+  const body = cleanText(text);
+  return firstNonEmpty(
+    title.match(/[^\s，。；;]*告字[（(]?\d{4}年?[）)]?\d+号?/)?.[0],
+    body.match(/[^\s，。；;]*告字[（(]?\d{4}年?[）)]?\d+号?/)?.[0],
+    title.match(/\d{4}年第?\d+号公告/)?.[0],
+    body.match(/\d{4}年第?\d+号公告/)?.[0]
+  );
+}
+
+export function extractWuhanDistrict(raw: string | null | undefined): string | null {
+  const value = cleanText(raw);
+  if (!value) {
+    return null;
+  }
+  return firstNonEmpty(
+    value.match(/([^，,\s]+?(?:区|县))/)?.[1],
+    null
+  );
+}
+
 class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
   public constructor() {
     super(config);
@@ -84,10 +106,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
       infoText.match(/发布时间[:：]\s*([0-9年月日\-.\/\s:]+)/)?.[1],
       text.match(/发布时间[:：]\s*([0-9年月日\-.\/\s:]+)/)?.[1]
     ));
-    const noticeNoRaw = firstNonEmpty(
-      detailTitle.match(/[^\s，。；;]*告字[（(]?\d{4}年?[）)]?\d+号?/)?.[0],
-      detailTitle.match(/\d{4}年第?\d+号公告/)?.[0]
-    );
+    const noticeNoRaw = extractWuhanNoticeNo(detailTitle, text);
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
     const attachmentsJson = document.attachments.length > 0 ? JSON.stringify(document.attachments) : null;
 
@@ -122,10 +141,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
                   .filter((cell) => /^-?\d+(?:\.\d+)?$/.test(cell))[1] ?? null
               )
             : null;
-        const district = firstNonEmpty(
-          districtRaw?.match(/([^，,\s]+区)/)?.[1],
-          districtRaw?.match(/([^，,\s]+街道)/)?.[1]
-        );
+        const district = extractWuhanDistrict(districtRaw);
         return {
           siteCode: this.siteCode,
           sourceKey: buildStableSourceKey(this.siteCode, "notice", [
@@ -140,7 +156,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
           city: this.cityName,
           district: district ?? null,
           noticeTitle: detailTitle,
-          noticeNoRaw: noticeNoRaw ?? parcelNo,
+          noticeNoRaw,
           noticeNoNorm,
           landUsage: usageIdx >= 0 ? row[usageIdx] ?? null : null,
           areaHa,
@@ -184,10 +200,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const records: ParsedResultRecord[] = rows.map((row, rowIndex) => {
       const parcelNo = parcelIdx >= 0 ? row[parcelIdx] ?? null : null;
       const districtRaw = districtIdx >= 0 ? row[districtIdx] ?? null : null;
-      const district = firstNonEmpty(
-        districtRaw?.match(/([^，,\s]+区)/)?.[1],
-        districtRaw?.match(/([^，,\s]+街道)/)?.[1]
-      );
+      const district = extractWuhanDistrict(districtRaw);
       const dealPriceWan = parseChineseNumber(dealIdx >= 0 ? row[dealIdx] : null);
       return {
         siteCode: this.siteCode,
@@ -203,7 +216,7 @@ class WuhanSiteAdapter extends ConfiguredHtmlSiteAdapter {
         city: this.cityName,
         district: district ?? null,
         resultTitle: detailTitle,
-        noticeNoRaw: noticeNoRaw ?? parcelNo,
+        noticeNoRaw,
         noticeNoNorm,
         dealPriceWan,
         winner: winnerIdx >= 0 ? row[winnerIdx] ?? null : null,

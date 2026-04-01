@@ -194,6 +194,15 @@ export function extractZhejiangNoticeNo(value: string | null | undefined): strin
   if (!text) {
     return null;
   }
+  const ningboStrictPattern =
+    /((?:甬土告|甬土资告|甬自然资规出告|象自然资规工出告字)[\[({〔【（]?\d{4}[\])}〕】）]?(?:[A-Za-z]+\d+|\d+)(?:-\d+)?号?)/gi;
+  const strictCandidates = Array.from(text.matchAll(ningboStrictPattern))
+    .map((item) => cleanText(item[1]))
+    .filter((item) => item.length > 0);
+  if (strictCandidates.length > 0) {
+    strictCandidates.sort((a, b) => b.length - a.length);
+    return strictCandidates[0] ?? null;
+  }
   const pattern = /(?=([^\s，。；;]{0,20}(?:告字|告)[\[({〔【（]?\d{4}[\])}〕】）]?(?:[A-Za-z]+\d+|\d+)(?:-\d+)?号?))/gi;
   const candidates = Array.from(text.matchAll(pattern))
     .map((item) => cleanText(item[1]))

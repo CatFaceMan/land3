@@ -51,6 +51,29 @@ function safeNormalizeDate(value: string | null | undefined): string | null {
   return isValidIsoDate(normalized) ? normalized : null;
 }
 
+export function stripXianSourcePrefix(value: string | null | undefined): string {
+  return cleanText(value).replace(/^(?:【[^】]+】\s*)+/, "");
+}
+
+export function extractXianNoticeNo(title: string | null | undefined, text: string | null | undefined): string | null {
+  const cleanTitle = stripXianSourcePrefix(title);
+  const cleanBody = stripXianSourcePrefix(text);
+  return firstNonEmpty(
+    cleanBody.match(/[^\s，。；;]*土出告字〔\d{4}〕\d+号(?:-\d+)?/)?.[0],
+    cleanTitle.match(/[^\s，。；;]*土出告字〔\d{4}〕\d+号(?:-\d+)?/)?.[0],
+    cleanTitle.match(/[^\s，。；;]*土出告字\[\d{4}\]\d+号(?:-\d+)?/)?.[0],
+    cleanBody.match(/[^\s，。；;]*土出告字\[\d{4}\]\d+号(?:-\d+)?/)?.[0]
+  );
+}
+
+export function normalizeXianParcelNo(value: string | null | undefined): string | null {
+  const text = cleanText(value);
+  if (!text) {
+    return null;
+  }
+  return text.replace(/\s+/g, "").replace(/\s*\[\s*/g, "[").replace(/\s*\]\s*/g, "]");
+}
+
 function parseRows(rawRows: string[][], marker: string): { headers: string[]; rows: string[][] } {
   const rows = rawRows.map((row) => row.map((cell) => cleanText(cell))).filter((row) => row.some(Boolean));
   const headerIndex = rows.findIndex((row) => row.some((cell) => normalizeHeader(cell).includes(normalizeHeader(marker))));
@@ -79,11 +102,7 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
     const text = cleanText(await page.evaluate(() => window.document.body?.innerText || "").catch(() => "")) || document.contentText;
     const title = cleanText(await page.locator(".article-title").first().textContent().catch(() => null)) || context.listItem.title;
     const sourceUrl = page.url();
-    const noticeNoRaw = firstNonEmpty(
-      text.match(/[^\s，。；;]*土出告字〔\d{4}〕\d+号(?:-\d+)?/)?.[0],
-      title.match(/[^\s，。；;]*土出告字〔\d{4}〕\d+号(?:-\d+)?/)?.[0],
-      title.match(/[^\s，。；;]*土出告字\[\d{4}\]\d+号(?:-\d+)?/)?.[0]
-    );
+    const noticeNoRaw = extractXianNoticeNo(title, text);
     const noticeNoNorm = normalizeNoticeNo(noticeNoRaw);
     const rawRows = await page.locator("table tr").evaluateAll((nodes) =>
       nodes.map((tr) => Array.from(tr.querySelectorAll("th,td")).map((td) => (td.textContent || "").replace(/\s+/g, " ").trim()))
@@ -123,27 +142,30 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
           }
         ];
       }
-      return rows.map((row, rowIndex) => ({
+      return rows.map((row, rowIndex) => {
+        const parcelNo = normalizeXianParcelNo(row[1] ?? null);
+        return ({
         siteCode: this.siteCode,
-        sourceKey: buildStableSourceKey(this.siteCode, "notice", [noticeNoNorm, row[1], row.join("|"), title, sourceUrl]),
+        sourceKey: buildStableSourceKey(this.siteCode, "notice", [noticeNoNorm, parcelNo, row.join("|"), title, sourceUrl]),
         sourceUrl,
         sourceTitle: context.listItem.title,
         city: this.cityName,
         district: row[2]?.split("、")[0] ?? null,
         noticeTitle: title,
-        noticeNoRaw: noticeNoRaw ?? row[1] ?? null,
+        noticeNoRaw,
         noticeNoNorm,
         landUsage: row[3] ?? null,
         areaHa: parseAreaToHectare(row[4] ? `${row[4]}平方米` : null),
         startPriceWan: parseChineseNumber(row[10] ?? row[8] ?? null),
         noticeDate,
         tradeDate,
-        parcelNo: row[1] ?? null,
+        parcelNo,
         contentText: text,
         rawHtml: document.rawHtml,
         attachmentsJson: document.attachments.length > 0 ? JSON.stringify(document.attachments) : null,
         crawlTime: new Date()
-      }));
+      });
+    });
     }
 
     const resultTitle = cleanText(await page.locator(".article-title").first().textContent().catch(() => null)) || title;
@@ -175,26 +197,29 @@ class XianSiteAdapter extends ConfiguredHtmlSiteAdapter {
         }
       ];
     }
-    return rows.map((row, rowIndex) => ({
+    return rows.map((row, rowIndex) => {
+      const parcelNo = normalizeXianParcelNo(row[1] ?? null);
+      return ({
       siteCode: this.siteCode,
-      sourceKey: buildStableSourceKey(this.siteCode, "result", [noticeNoNorm, row[1], row.join("|"), resultTitle, sourceUrl]),
+      sourceKey: buildStableSourceKey(this.siteCode, "result", [noticeNoNorm, parcelNo, row.join("|"), resultTitle, sourceUrl]),
       sourceUrl,
       sourceTitle: context.listItem.title,
       city: this.cityName,
       district: null,
       resultTitle,
-      noticeNoRaw: noticeNoRaw ?? row[1] ?? null,
+      noticeNoRaw,
       noticeNoNorm,
       dealPriceWan: parseChineseNumber(row[3] ?? null),
       winner: row[2] ?? null,
       status: row[2] ? "已成交" : null,
       dealDate,
-      parcelNo: row[1] ?? null,
+      parcelNo,
       contentText: text,
       rawHtml: document.rawHtml,
       attachmentsJson: document.attachments.length > 0 ? JSON.stringify(document.attachments) : null,
       crawlTime: new Date()
-    }));
+    });
+  });
   }
 }
 
