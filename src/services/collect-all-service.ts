@@ -28,7 +28,7 @@ export async function runCollectAll(params: {
   sites: Array<Awaited<ReturnType<typeof runRefresh>>>;
 }> {
   const now = new Date();
-  const from = params.from ?? toIsoDate(addDays(now, -30));
+  const from = params.from ?? toIsoDate(addDays(now, -180));
   const to = params.to ?? toIsoDate(now);
   const siteCodes = getRegisteredSiteCodes().filter((siteCode) => params.config.sites[siteCode]?.enabled);
   if (siteCodes.length === 0) {
@@ -37,15 +37,20 @@ export async function runCollectAll(params: {
 
   const sites: Array<Awaited<ReturnType<typeof runRefresh>>> = [];
   for (const siteCode of siteCodes) {
-    const output = await runRefresh({
-      config: params.config,
-      repository: params.repository,
-      siteCode,
-      from,
-      to,
-      maxItems: params.maxItems
-    });
-    sites.push(output);
+    try {
+      const output = await runRefresh({
+        config: params.config,
+        repository: params.repository,
+        siteCode,
+        from,
+        to,
+        maxItems: params.maxItems
+      });
+      sites.push(output);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`[site-skip] ${siteCode} skipped: ${message}\n`);
+    }
   }
 
   return {

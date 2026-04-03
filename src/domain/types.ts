@@ -38,6 +38,7 @@ export interface SiteRuntimeConfig {
   extraDelayMs?: number;
   delayJitterMs?: number;
   blockCooldownMs?: number;
+  maxConsecutiveMissingDatePages?: number;
   storageStatePath?: string;
   challengeWaitMs?: number;
 }

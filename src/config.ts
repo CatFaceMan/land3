@@ -78,6 +78,7 @@ export function loadConfig(options?: { allowMissingDatabaseUrl?: boolean }): App
             extraDelayMs: readNumber(`${prefix}_EXTRA_DELAY_MS`, defaultExtraDelayMs),
             delayJitterMs: readNumber(`${prefix}_DELAY_JITTER_MS`, 0),
             blockCooldownMs: readNumber(`${prefix}_BLOCK_COOLDOWN_MS`, 0),
+            maxConsecutiveMissingDatePages: readNumber(`${prefix}_MAX_MISSING_DATE_PAGES`, 8),
             storageStatePath: process.env[`${prefix}_STORAGE_STATE_PATH`]?.trim() || undefined,
             challengeWaitMs: readNumber(`${prefix}_CHALLENGE_WAIT_MS`, 0)
           }

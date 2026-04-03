@@ -56,7 +56,7 @@ CRAWL_MAX_FAILURE_RATE=0.02
 # 单站点：抓取公告+结果，并合并入 land_record/manual_review_pool
 npm run refresh -- --site beijing
 
-# 全站点：默认抓取最近 30 天
+# 全站点：默认抓取最近半年（180 天）
 npm run collect-all
 ```
 
@@ -82,7 +82,7 @@ npm run refresh -- --site <siteCode> [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--ma
 npm run collect-all [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--max-items N] [--headless true|false]
 ```
 
-未传 `--from/--to` 时，默认区间为“当前日期往前 30 天”到“当前日期”。
+未传 `--from/--to` 时，默认区间为“当前日期往前 180 天（近半年）”到“当前日期”。
 
 ## 限频与并发
 
@@ -97,6 +97,7 @@ npm run collect-all [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--max-items N] [--hea
 - `SITE_<SITE>_ENABLED`
 - `SITE_<SITE>_DETAIL_CONCURRENCY`
 - `SITE_<SITE>_EXTRA_DELAY_MS`
+- `SITE_<SITE>_MAX_MISSING_DATE_PAGES`（默认 `8`，连续多少页采集不到时间字段后自动停止，防止无限翻页）
 - `SITE_<SITE>_PROXY_PROFILE`
 
 示例：`SITE_BEIJING_ENABLED=true`
@@ -108,7 +109,7 @@ npm run collect-all [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--max-items N] [--hea
 - `CRAWL_MAX_FAILURES` 默认 `0`
 - `CRAWL_MAX_FAILURE_RATE` 默认 `0.02`
 
-当失败数和失败率同时超过阈值时，当前站点抓取会报错终止。
+当失败数和失败率同时超过阈值时，系统会输出质量告警并继续执行，不会中止整批抓取。
 
 ## 数据库表
 

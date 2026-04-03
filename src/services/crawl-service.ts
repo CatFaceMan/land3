@@ -37,17 +37,15 @@ function readEnvNumber(name: string, fallback: number): number {
   return value;
 }
 
-function assertQuality(summary: CrawlRunSummary): void {
+function assertQuality(summary: CrawlRunSummary): string | null {
   const maxFailures = Math.max(0, readEnvNumber("CRAWL_MAX_FAILURES", 0));
   const maxFailureRate = Math.max(0, readEnvNumber("CRAWL_MAX_FAILURE_RATE", 0.02));
   const processedTasks = summary.metrics?.processedTasks ?? summary.noticesSaved + summary.resultsSaved + summary.failures;
   const failureRate = processedTasks > 0 ? summary.failures / processedTasks : (summary.failures > 0 ? 1 : 0);
   if (summary.failures <= maxFailures || failureRate <= maxFailureRate) {
-    return;
+    return null;
   }
-  throw new Error(
-    `Quality gate failed for ${summary.siteCode}/${summary.bizType}: failures=${summary.failures}, processed=${processedTasks}, failureRate=${failureRate.toFixed(4)}, maxFailures=${maxFailures}, maxFailureRate=${maxFailureRate}`
-  );
+  return `Quality gate failed for ${summary.siteCode}/${summary.bizType}: failures=${summary.failures}, processed=${processedTasks}, failureRate=${failureRate.toFixed(4)}, maxFailures=${maxFailures}, maxFailureRate=${maxFailureRate}`;
 }
 
 export async function runCrawl(params: {
@@ -74,7 +72,10 @@ export async function runCrawl(params: {
     to: params.to,
     maxItems: params.maxItems
   });
-  assertQuality(output.summary);
+  const qualityWarning = assertQuality(output.summary);
+  if (qualityWarning) {
+    process.stderr.write(`[quality-warning] ${qualityWarning}\n`);
+  }
   if (params.bizType === "notice") {
     params.onNotices?.(output.notices);
   } else {

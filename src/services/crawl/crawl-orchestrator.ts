@@ -56,6 +56,7 @@ export class CrawlOrchestrator {
     const configuredExtraDelayMs = Math.max(0, siteRuntime.extraDelayMs ?? 0);
     const configuredJitterMs = Math.max(0, siteRuntime.delayJitterMs ?? 0);
     const configuredBlockCooldownMs = Math.max(0, siteRuntime.blockCooldownMs ?? 0);
+    const maxMissingDatePages = Math.max(1, siteRuntime.maxConsecutiveMissingDatePages ?? 8);
     const detailConcurrency = rateLimited ? 1 : configuredDetailConcurrency;
     const extraDelayMs = rateLimited ? Math.max(2_500, configuredExtraDelayMs) : configuredExtraDelayMs;
     const jitterMs = configuredJitterMs;
@@ -78,6 +79,7 @@ export class CrawlOrchestrator {
     let taskDurationSum = 0;
     const from = context.from;
     let stopByFromDate = false;
+    let consecutiveMissingDatePages = 0;
 
     try {
       let listPage = await kernel.getPage();
@@ -86,6 +88,7 @@ export class CrawlOrchestrator {
       await adapter.gotoPage(listPage, context.bizType, startPage);
 
       for (let pageNo = startPage; ; pageNo += 1) {
+        let pageHasAnyParsedDate = false;
         summary.pagesVisited = Math.max(summary.pagesVisited, pageNo);
         this.logger.info({ event: "page_start", runId: context.runId, site: context.siteCode, biz: context.bizType, page: pageNo });
 
@@ -129,6 +132,9 @@ export class CrawlOrchestrator {
           const handledTask = settled.status === "fulfilled" ? settled.value.task : fallbackTask;
           listPage = output.listPage;
           const shouldStop = await this.handleTaskOutput(context, handledTask, output, summary, notices, results);
+          if (this.hasDateValue(context.bizType, output.notices, output.results)) {
+            pageHasAnyParsedDate = true;
+          }
           processedTasks += 1;
           taskDurationSum += output.result.durationMs;
           if (output.result.task.attempt > 1) {
@@ -206,6 +212,9 @@ export class CrawlOrchestrator {
           const output = await executor.execute(context, task, listPage, from);
           listPage = output.listPage;
           const shouldStop = await this.handleTaskOutput(context, output.result.task, output, summary, notices, results);
+          if (this.hasDateValue(context.bizType, output.notices, output.results)) {
+            pageHasAnyParsedDate = true;
+          }
           processedTasks += 1;
           taskDurationSum += output.result.durationMs;
           if (output.result.task.attempt > 1) {
@@ -267,6 +276,32 @@ export class CrawlOrchestrator {
         }
 
         await scheduler.completePage(context, pageNo);
+        if (from) {
+          if (pageHasAnyParsedDate) {
+            consecutiveMissingDatePages = 0;
+          } else {
+            consecutiveMissingDatePages += 1;
+            this.logger.info({
+              event: "page_missing_date",
+              runId: context.runId,
+              site: context.siteCode,
+              biz: context.bizType,
+              page: pageNo,
+              message: `consecutive=${consecutiveMissingDatePages}/${maxMissingDatePages}`
+            });
+            if (consecutiveMissingDatePages >= maxMissingDatePages) {
+              this.logger.error({
+                event: "stop_missing_date",
+                runId: context.runId,
+                site: context.siteCode,
+                biz: context.bizType,
+                page: pageNo,
+                message: `consecutiveMissingDatePages reached limit ${maxMissingDatePages}; stop crawl to avoid infinite pagination`
+              });
+              break;
+            }
+          }
+        }
         if (context.maxItems && (summary.noticesSaved + summary.resultsSaved) >= context.maxItems) {
           break;
         }
@@ -362,6 +397,17 @@ export class CrawlOrchestrator {
   private isTimeoutError(message: string | null): boolean {
     const normalized = (message ?? "").toLowerCase();
     return normalized.includes("timeout");
+  }
+
+  private hasDateValue(
+    bizType: CrawlContext["bizType"],
+    notices: ParsedNoticeRecord[],
+    results: ParsedResultRecord[]
+  ): boolean {
+    if (bizType === "notice") {
+      return notices.some((record) => Boolean(record.noticeDate));
+    }
+    return results.some((record) => Boolean(record.dealDate));
   }
 
   private async buildRejectedTaskOutput(
