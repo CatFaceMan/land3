@@ -189,7 +189,7 @@ export function normalizeJiangsuDistrictName(value: string | null | undefined): 
 export function resolveJiangsuLandUsage(
   landUse: string | null | undefined,
   tdYt: string | null | undefined,
-  regionCode?: string | null | undefined
+  _regionCode?: string | null | undefined
 ): string | null {
   const normalizedLandUse = cleanText(landUse);
   const normalizedTdYt = cleanText(tdYt);
@@ -199,11 +199,10 @@ export function resolveJiangsuLandUsage(
   if (!normalizedTdYt) {
     return normalizedLandUse;
   }
-  const normalizedRegionCode = cleanText(regionCode);
-  if (normalizedRegionCode?.startsWith("3205") && ["商业", "商住", "其它"].includes(normalizedLandUse)) {
-    return normalizedTdYt;
+  if (normalizedLandUse === normalizedTdYt) {
+    return normalizedLandUse;
   }
-  return normalizedLandUse;
+  return `${normalizedLandUse}、${normalizedTdYt}`;
 }
 
 export function resolveJiangsuWinner(value: string | null | undefined): string | null {

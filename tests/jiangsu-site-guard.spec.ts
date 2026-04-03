@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isJiangsuRegionCodeAllowed } from "../src/adapters/jiangsu.js";
+import { isJiangsuRegionCodeAllowed, resolveJiangsuLandUsage } from "../src/adapters/jiangsu.js";
 
 describe("Jiangsu site region guard", () => {
   it("accepts only site-owned xzqDm prefixes", () => {
@@ -29,5 +29,16 @@ describe("Jiangsu site region guard", () => {
     expect(noticeForeign).toBe(false);
     expect(resultOwned).toBe(true);
     expect(resultForeign).toBe(false);
+  });
+});
+
+describe("resolveJiangsuLandUsage", () => {
+  it("returns combined land usage when both construction and planning usages exist", () => {
+    expect(resolveJiangsuLandUsage("商业", "商务金融用地", "320500")).toBe("商业、商务金融用地");
+  });
+
+  it("returns single usage when either side is missing", () => {
+    expect(resolveJiangsuLandUsage("工业", null, "320200")).toBe("工业");
+    expect(resolveJiangsuLandUsage(null, "二类居住用地", "320200")).toBe("二类居住用地");
   });
 });
